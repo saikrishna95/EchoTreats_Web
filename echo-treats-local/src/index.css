@@ -1,0 +1,127 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 20 33% 98%;
+    --foreground: 20 20% 18%;
+
+    --card: 20 30% 97%;
+    --card-foreground: 20 20% 18%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 20 20% 18%;
+
+    --primary: 12 45% 72%;
+    --primary-foreground: 20 20% 98%;
+
+    --secondary: 20 30% 94%;
+    --secondary-foreground: 20 20% 25%;
+
+    --muted: 20 20% 95%;
+    --muted-foreground: 20 10% 50%;
+
+    --accent: 350 35% 85%;
+    --accent-foreground: 20 20% 18%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 20 20% 90%;
+    --input: 20 20% 90%;
+    --ring: 12 45% 72%;
+
+    --radius: 1rem;
+
+    /* Echo Treats custom tokens */
+    --blush: 350 40% 90%;
+    --rose: 350 30% 78%;
+    --cream: 35 40% 95%;
+    --ivory: 40 30% 97%;
+    --peach: 20 50% 88%;
+    --mocha: 20 15% 40%;
+    --nude: 20 25% 85%;
+    --gold: 38 60% 55%;
+
+    --gradient-hero: linear-gradient(180deg, hsl(350 40% 94%), hsl(20 33% 98%));
+    --gradient-rose: linear-gradient(135deg, hsl(350 40% 92%), hsl(20 50% 92%));
+    --gradient-warm: linear-gradient(180deg, hsl(35 40% 97%), hsl(350 40% 95%));
+    --shadow-soft: 0 4px 20px -4px hsl(350 40% 80% / 0.3);
+    --shadow-card: 0 2px 12px -2px hsl(20 20% 70% / 0.15);
+    --shadow-hover: 0 8px 30px -8px hsl(350 40% 75% / 0.25);
+
+    --font-heading: 'Playfair Display', Georgia, serif;
+    --font-body: 'DM Sans', system-ui, sans-serif;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-body);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+  }
+}
+
+@layer utilities {
+  .font-heading {
+    font-family: var(--font-heading);
+  }
+  .font-body {
+    font-family: var(--font-body);
+  }
+  .gradient-hero {
+    background: var(--gradient-hero);
+  }
+  .gradient-rose {
+    background: var(--gradient-rose);
+  }
+  .gradient-warm {
+    background: var(--gradient-warm);
+  }
+  .shadow-soft {
+    box-shadow: var(--shadow-soft);
+  }
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+  .shadow-hover {
+    box-shadow: var(--shadow-hover);
+  }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: hsl(var(--cream));
+}
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--rose));
+  border-radius: 3px;
+}
+
+/* Smooth scroll */
+html {
+  scroll-behavior: smooth;
+}
