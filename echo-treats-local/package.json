@@ -15,7 +15,8 @@
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "supabase:login": "supabase login",
-    "supabase:link": "supabase link"
+    "supabase:link": "supabase link",
+    "generate:favicon": "node scripts/generate-favicons.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -85,7 +86,9 @@
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
+    "jimp": "^1.6.0",
     "jsdom": "^20.0.3",
+    "png-to-ico": "^3.0.1",
     "postcss": "^8.5.6",
     "supabase": "^2.84.4",
     "tailwindcss": "^3.4.17",
