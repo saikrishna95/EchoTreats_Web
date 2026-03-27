@@ -6,6 +6,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import customImg from "@/assets/product-custom-1.jpg";
 
+const WHATSAPP_NUMBER = import.meta.env.VITE_WHATSAPP_NUMBER || "919000000000";
+const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE || "+919000000000";
+
 const CustomOrderSection = () => {
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
@@ -55,9 +58,8 @@ const CustomOrderSection = () => {
       window.open(`mailto:echotreats.v@gmail.com?subject=${subject}&body=${mailtoBody}`, "_self");
       toast.success("Your email app will open with the order details.");
     } else if (submitChannel === "whatsapp") {
-      const waNumber = "919XXXXXXXXXX"; // TODO: replace with actual WhatsApp number
       const waText = encodeURIComponent(orderSummary);
-      window.open(`https://wa.me/${waNumber}?text=${waText}`, "_blank");
+      window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${waText}`, "_blank");
       toast.success("Opening WhatsApp with your order details.");
     }
 
@@ -151,7 +153,7 @@ const CustomOrderSection = () => {
                 <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border" /></div>
                 <span className="relative bg-background/80 px-3 font-body text-xs text-muted-foreground">or skip the form</span>
               </div>
-              <a href="tel:+919XXXXXXXXXX" className="w-full flex items-center justify-center gap-2 py-3 bg-secondary text-secondary-foreground rounded-xl font-body font-semibold text-sm hover:opacity-90 transition-opacity border border-border">
+              <a href={`tel:${CONTACT_PHONE}`} className="w-full flex items-center justify-center gap-2 py-3 bg-secondary text-secondary-foreground rounded-xl font-body font-semibold text-sm hover:opacity-90 transition-opacity border border-border">
                 <Phone className="w-4 h-4" /> Call Us Directly
               </a>
             </form>

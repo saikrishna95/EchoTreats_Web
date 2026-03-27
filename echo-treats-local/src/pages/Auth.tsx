@@ -10,17 +10,15 @@ const Auth = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
   const { signIn, signUp, user } = useAuth();
   const navigate = useNavigate();
 
-  // Redirect if already logged in (e.g. after OAuth callback)
   useEffect(() => {
-    if (user) {
-      navigate("/", { replace: true });
-    }
+    if (user) navigate("/", { replace: true });
   }, [user, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -34,12 +32,21 @@ const Auth = () => {
       if (error) setError(error.message);
       else navigate("/");
     } else {
-      const { error } = await signUp(email, password, fullName);
+      // Validate phone
+      if (!phone || phone.trim().length < 10) {
+        setError("Please enter a valid phone number");
+        setLoading(false);
+        return;
+      }
+
+      const { error } = await signUp(email, password, fullName, phone);
       if (error) setError(error.message);
-      else setSuccess("Check your email to confirm your account!");
+      else setSuccess("Account created! You can now sign in.");
     }
     setLoading(false);
   };
+
+  const inputCls = "w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl font-body text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30";
 
   return (
     <div className="min-h-screen gradient-hero flex items-center justify-center px-4">
@@ -60,31 +67,44 @@ const Auth = () => {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
-            <input
-              type="text"
-              placeholder="Full Name"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-              className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl font-body text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
+            <>
+              <input
+                type="text"
+                placeholder="Full Name *"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                required
+                className={inputCls}
+              />
+              <input
+                type="tel"
+                placeholder="Phone Number * (e.g. 9876543210)"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value.replace(/[^0-9+\-\s]/g, ""))}
+                required
+                minLength={10}
+                maxLength={15}
+                className={inputCls}
+              />
+            </>
           )}
+
           <input
             type="email"
-            placeholder="Email"
+            placeholder="Email *"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl font-body text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className={inputCls}
           />
           <input
             type="password"
-            placeholder="Password"
+            placeholder="Password * (min 6 characters)"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
             minLength={6}
-            className="w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl font-body text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className={inputCls}
           />
 
           {error && <p className="text-sm text-destructive font-body">{error}</p>}
@@ -114,9 +134,7 @@ const Auth = () => {
             setError("");
             const { error } = await supabase.auth.signInWithOAuth({
               provider: "google",
-              options: {
-                redirectTo: window.location.origin,
-              },
+              options: { redirectTo: window.location.origin },
             });
             if (error) setError(error.message);
           }}

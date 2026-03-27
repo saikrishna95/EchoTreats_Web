@@ -9,6 +9,10 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import heroBg from "@/assets/hero-bakery.jpg";
 import logo from "@/assets/logo.png";
+import ProductDetailModal from "@/components/ProductDetailModal";
+import type { Database } from "@/integrations/supabase/types";
+
+type ProductRow = Database["public"]["Tables"]["products"]["Row"];
 
 const categories = [
   { icon: Cake, label: "Cakes", href: "#cakes" },
@@ -23,6 +27,7 @@ const categories = [
 
 const HeroSection = () => {
   const [query, setQuery] = useState("");
+  const [selectedProduct, setSelectedProduct] = useState<ProductRow | null>(null);
   const { products } = useProducts();
   const { addToCart } = useCart();
   const { user } = useAuth();
@@ -35,19 +40,15 @@ const HeroSection = () => {
 
   const filtered = useMemo(() => {
     if (query.trim().length < 2) return [];
-
     const q = query.toLowerCase();
-
     return products
-      .filter((p) => {
-        return (
-          p.name.toLowerCase().includes(q) ||
-          p.description?.toLowerCase().includes(q) ||
-          p.tags?.some((t) => t.toLowerCase().includes(q))
-        );
-      })
+      .filter((p) =>
+        p.name.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q) ||
+        p.tags?.some((t) => t.toLowerCase().includes(q))
+      )
       .slice(0, 6)
-      .map(mapDbProduct);
+      .map((p) => ({ raw: p, mapped: mapDbProduct(p) }));
   }, [products, query]);
 
   const handleAdd = async (productId: string, productName: string) => {
@@ -62,6 +63,7 @@ const HeroSection = () => {
   };
 
   return (
+    <>
     <section id="hero-section" className="relative overflow-hidden gradient-hero min-h-[90vh]">
       <div className="absolute inset-0">
         <img src={heroBg} alt="" className="w-full h-full object-cover opacity-50" />
@@ -130,8 +132,12 @@ const HeroSection = () => {
 
           {filtered.length > 0 && (
             <div className="absolute w-full bg-white mt-2 rounded-xl shadow max-h-60 overflow-auto z-10">
-              {filtered.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-3 p-3 hover:bg-gray-100">
+              {filtered.map(({ raw, mapped: p }) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between gap-3 p-3 hover:bg-gray-100 cursor-pointer"
+                  onClick={() => { setSelectedProduct(raw); setQuery(""); }}
+                >
                   <div className="flex items-center gap-3 min-w-0">
                     <img src={p.image} alt={p.name} className="w-10 h-10 rounded object-cover" />
                     <div className="text-left min-w-0">
@@ -142,7 +148,7 @@ const HeroSection = () => {
 
                   <button
                     type="button"
-                    onClick={() => handleAdd(p.id, p.name)}
+                    onClick={(e) => { e.stopPropagation(); handleAdd(p.id, p.name); }}
                     className="shrink-0 px-3 py-1.5 text-xs rounded-full bg-primary text-white hover:opacity-90"
                   >
                     Add
@@ -185,6 +191,13 @@ const HeroSection = () => {
         </div>
       </div>
     </section>
+
+    <ProductDetailModal
+      product={selectedProduct}
+      open={!!selectedProduct}
+      onOpenChange={(open) => { if (!open) setSelectedProduct(null); }}
+    />
+  </>
   );
 };
 

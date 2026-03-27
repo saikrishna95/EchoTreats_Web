@@ -1,27 +1,50 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
 
 type Product = Database["public"]["Tables"]["products"]["Row"];
 type Category = Database["public"]["Tables"]["categories"]["Row"];
 
-export const useProducts = () => {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
+// Cache to avoid refetching on every page visit
+let cachedProducts: Product[] = [];
+let cachedCategories: Category[] = [];
+let cacheTime = 0;
+const CACHE_DURATION = 60 * 1000; // 1 minute
 
-  useEffect(() => {
-    const fetch = async () => {
-      const [prodRes, catRes] = await Promise.all([
-        supabase.from("products").select("*").eq("is_available", true).order("sort_order"),
-        supabase.from("categories").select("*").order("sort_order"),
-      ]);
-      if (prodRes.data) setProducts(prodRes.data);
-      if (catRes.data) setCategories(catRes.data);
+export const useProducts = () => {
+  const [products, setProducts] = useState<Product[]>(cachedProducts);
+  const [categories, setCategories] = useState<Category[]>(cachedCategories);
+  const [loading, setLoading] = useState(cachedProducts.length === 0);
+
+  const fetchData = useCallback(async (force = false) => {
+    const now = Date.now();
+    if (!force && cachedProducts.length > 0 && now - cacheTime < CACHE_DURATION) {
+      setProducts(cachedProducts);
+      setCategories(cachedCategories);
       setLoading(false);
-    };
-    fetch();
+      return;
+    }
+
+    setLoading(true);
+    const [prodRes, catRes] = await Promise.all([
+      supabase
+        .from("products")
+        .select("id, name, description, price, image_url, tags, is_featured, is_available, sort_order, category_id, occasion")
+        .eq("is_available", true)
+        .order("sort_order"),
+      supabase
+        .from("categories")
+        .select("id, name, slug, description, sort_order")
+        .order("sort_order"),
+    ]);
+
+    if (prodRes.data) { cachedProducts = prodRes.data; setProducts(prodRes.data); }
+    if (catRes.data) { cachedCategories = catRes.data; setCategories(catRes.data); }
+    cacheTime = Date.now();
+    setLoading(false);
   }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const getProductsByCategory = (categorySlug: string) => {
     const cat = categories.find(c => c.slug === categorySlug);
@@ -31,5 +54,7 @@ export const useProducts = () => {
 
   const getFeatured = () => products.filter(p => p.is_featured);
 
-  return { products, categories, loading, getProductsByCategory, getFeatured };
+  const refresh = () => fetchData(true);
+
+  return { products, categories, loading, getProductsByCategory, getFeatured, refresh };
 };

@@ -7,7 +7,7 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   isAdmin: boolean;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, fullName: string, phone: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
@@ -42,24 +42,35 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       setLoading(false);
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        checkAdmin(session.user.id);
-      }
-      setLoading(false);
-    });
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) checkAdmin(session.user.id);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string) => {
-    const { error } = await supabase.auth.signUp({
+  const signUp = async (email: string, password: string, fullName: string, phone: string) => {
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { full_name: fullName } },
+      options: { data: { full_name: fullName, phone } },
     });
+
+    if (!error && data.user) {
+      // Save full profile including phone immediately
+      await supabase.from("profiles").upsert({
+        user_id: data.user.id,
+        full_name: fullName,
+        phone: phone,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
+    }
+
     return { error: error as Error | null };
   };
 
@@ -69,6 +80,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
+    // Clear state immediately for instant logout feel
+    setUser(null);
+    setSession(null);
+    setIsAdmin(false);
     await supabase.auth.signOut();
   };
 

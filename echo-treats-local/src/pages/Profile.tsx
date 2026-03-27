@@ -3,7 +3,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
-import { User, Package, Heart, LogOut, ArrowLeft, Trash2 } from "lucide-react";
+import { User, Package, Heart, LogOut, ArrowLeft, Trash2, Pencil, Check, X } from "lucide-react";
 import { useWishlist } from "@/hooks/useWishlist";
 import { useCart } from "@/contexts/CartContext";
 import { toast } from "sonner";
@@ -23,7 +23,14 @@ const Profile = () => {
 
   const [profile, setProfile] = useState<ProfileType | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [orderItems, setOrderItems] = useState<Record<string, any[]>>({});
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
+
+  // Profile edit state
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editPhone, setEditPhone] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const { wishlistItems, loading: wishlistLoading, toggleWishlist } = useWishlist();
   const { addToCart } = useCart();
@@ -36,12 +43,33 @@ const Profile = () => {
 
     const fetchData = async () => {
       const [profileRes, ordersRes] = await Promise.all([
-        supabase.from("profiles").select("*").eq("user_id", user.id).single(),
+        supabase.from("profiles").select("*").eq("user_id", user.id).maybeSingle(),
         supabase.from("orders").select("*").eq("user_id", user.id).order("created_at", { ascending: false }),
       ]);
 
-      if (profileRes.data) setProfile(profileRes.data);
-      if (ordersRes.data) setOrders(ordersRes.data);
+      if (profileRes.data) {
+        setProfile(profileRes.data);
+        setEditName(profileRes.data.full_name || "");
+        setEditPhone(profileRes.data.phone || "");
+      }
+      if (ordersRes.data) {
+        setOrders(ordersRes.data);
+        if (ordersRes.data.length > 0) {
+          const orderIds = ordersRes.data.map((o) => o.id);
+          const { data: items } = await supabase
+            .from("order_items")
+            .select("order_id, product_name, quantity, unit_price")
+            .in("order_id", orderIds);
+          if (items) {
+            const grouped: Record<string, any[]> = {};
+            items.forEach((item) => {
+              if (!grouped[item.order_id]) grouped[item.order_id] = [];
+              grouped[item.order_id].push(item);
+            });
+            setOrderItems(grouped);
+          }
+        }
+      }
     };
 
     fetchData();
@@ -67,6 +95,23 @@ const Profile = () => {
     await addToCart(productId);
     await toggleWishlist(productId);
     toast.success(`${name} moved to cart`);
+  };
+
+  const handleSaveProfile = async () => {
+    if (!user) return;
+    setSaving(true);
+    const { error } = await supabase.from("profiles").upsert(
+      { user_id: user.id, full_name: editName.trim(), phone: editPhone.trim(), updated_at: new Date().toISOString() },
+      { onConflict: "user_id" }
+    );
+    if (error) {
+      toast.error("Failed to save profile");
+    } else {
+      setProfile((prev) => prev ? { ...prev, full_name: editName.trim(), phone: editPhone.trim() } : prev);
+      setEditing(false);
+      toast.success("Profile updated");
+    }
+    setSaving(false);
   };
 
   const statusColor: Record<string, string> = {
@@ -248,25 +293,72 @@ const Profile = () => {
 
           {activeTab === "profile" && (
             <div className="bg-card rounded-2xl p-6 shadow-card border border-border/50">
-              <h2 className="font-heading text-lg font-semibold mb-4">Profile Details</h2>
-              <div className="space-y-3 font-body text-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-heading text-lg font-semibold">Profile Details</h2>
+                {!editing ? (
+                  <button
+                    type="button"
+                    onClick={() => { setEditName(profile?.full_name || ""); setEditPhone(profile?.phone || ""); setEditing(true); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary rounded-lg font-body text-xs text-foreground hover:bg-secondary/80"
+                  >
+                    <Pencil className="w-3 h-3" /> Edit
+                  </button>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSaveProfile}
+                      disabled={saving}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg font-body text-xs hover:opacity-90 disabled:opacity-60"
+                    >
+                      <Check className="w-3 h-3" /> {saving ? "Saving…" : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditing(false)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary rounded-lg font-body text-xs hover:bg-secondary/80"
+                    >
+                      <X className="w-3 h-3" /> Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="space-y-4 font-body text-sm">
                 <div>
-                  <span className="text-muted-foreground">Name:</span>
-                  <span className="text-foreground ml-2">{profile?.full_name || "Not set"}</span>
+                  <p className="text-muted-foreground text-xs mb-1">Name</p>
+                  {editing ? (
+                    <input
+                      value={editName}
+                      onChange={e => setEditName(e.target.value)}
+                      className="w-full px-3 py-2 bg-secondary/50 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      placeholder="Your name"
+                    />
+                  ) : (
+                    <p className="text-foreground">{profile?.full_name || "Not set"}</p>
+                  )}
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Email:</span>
-                  <span className="text-foreground ml-2">{user?.email}</span>
+                  <p className="text-muted-foreground text-xs mb-1">Email</p>
+                  <p className="text-foreground">{user?.email}</p>
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Phone:</span>
-                  <span className="text-foreground ml-2">{profile?.phone || "Not set"}</span>
+                  <p className="text-muted-foreground text-xs mb-1">Phone</p>
+                  {editing ? (
+                    <input
+                      value={editPhone}
+                      onChange={e => setEditPhone(e.target.value)}
+                      className="w-full px-3 py-2 bg-secondary/50 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      placeholder="Your phone number"
+                    />
+                  ) : (
+                    <p className="text-foreground">{profile?.phone || "Not set"}</p>
+                  )}
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Member since:</span>
-                  <span className="text-foreground ml-2">
+                  <p className="text-muted-foreground text-xs mb-1">Member since</p>
+                  <p className="text-foreground">
                     {profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : ""}
-                  </span>
+                  </p>
                 </div>
               </div>
             </div>
@@ -287,24 +379,40 @@ const Profile = () => {
                   </button>
                 </div>
               ) : (
-                orders.map((order) => (
-                  <div key={order.id} className="bg-card rounded-2xl p-5 shadow-card border border-border/50">
-                    <div className="flex items-center justify-between mb-2">
-                      <p className="font-body text-xs text-muted-foreground">#{order.id.slice(0, 8)}</p>
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-semibold ${
-                          statusColor[order.status] || ""
-                        }`}
-                      >
-                        {order.status}
-                      </span>
+                orders.map((order) => {
+                  const items = orderItems[order.id] || [];
+                  return (
+                    <div key={order.id} className="bg-card rounded-2xl p-5 shadow-card border border-border/50">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="font-body text-xs font-mono text-muted-foreground">#{order.id.slice(0, 8).toUpperCase()}</p>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-semibold ${statusColor[order.status] || ""}`}>
+                          {order.status}
+                        </span>
+                      </div>
+                      {items.length > 0 && (
+                        <div className="mb-2 space-y-1">
+                          {items.map((item, i) => (
+                            <div key={i} className="flex justify-between font-body text-sm">
+                              <span className="text-foreground font-medium">
+                                {item.product_name}{item.quantity > 1 ? ` ×${item.quantity}` : ""}
+                              </span>
+                              <span className="text-muted-foreground">₹{Number(item.unit_price * item.quantity).toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <p className="font-body text-xs text-muted-foreground mb-2">
+                        Ordered: {new Date(order.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                      </p>
+                      <div className="flex justify-between font-body text-sm border-t border-border/40 pt-2">
+                        <span className="text-foreground font-semibold">Total: ₹{Number(order.total).toLocaleString()}</span>
+                        <span className="text-muted-foreground text-xs">
+                          Status updated: {new Date(order.updated_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex justify-between font-body text-sm">
-                      <span className="text-foreground font-medium">₹{Number(order.total).toLocaleString()}</span>
-                      <span className="text-muted-foreground">{new Date(order.created_at).toLocaleDateString()}</span>
-                    </div>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           )}
