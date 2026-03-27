@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { ShoppingBag, Minus, Plus, Palette, Leaf, ChefHat, ShieldCheck, Gift, CalendarDays, Heart } from "lucide-react";
+import { ShoppingBag, Minus, Plus, Palette, Leaf, ChefHat, ShieldCheck, Gift, CalendarDays, Heart, ArrowLeft } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWishlist } from "@/hooks/useWishlist";
@@ -77,7 +77,16 @@ const ProductDetailModal = ({ product, open, onOpenChange }: ProductDetailModalP
       }}
     >
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0 rounded-2xl border-border/50 gap-0">
-        <div className="relative bg-secondary/20">
+        <div className="relative bg-secondary/20 pt-12">
+          <button
+            type="button"
+            aria-label="Go back"
+            onClick={() => onOpenChange(false)}
+            className="absolute top-3 left-3 z-10 p-2.5 bg-background/85 backdrop-blur-sm rounded-full shadow-card transition-colors hover:bg-background"
+          >
+            <ArrowLeft className="w-5 h-5 text-foreground" />
+          </button>
+
           <img
             src={product.image_url || "/placeholder.svg"}
             alt={product.name}
@@ -88,7 +97,7 @@ const ProductDetailModal = ({ product, open, onOpenChange }: ProductDetailModalP
             type="button"
             aria-label={wished ? "Remove from wishlist" : "Add to wishlist"}
             onClick={handleToggleWishlist}
-            className="absolute top-4 right-4 z-10 p-2.5 bg-background/85 backdrop-blur-sm rounded-full shadow-card transition-colors hover:bg-background"
+            className="absolute top-3 right-3 z-10 p-2.5 bg-background/85 backdrop-blur-sm rounded-full shadow-card transition-colors hover:bg-background"
           >
             <Heart
               className={`w-5 h-5 transition-colors ${wished ? "fill-rose text-rose" : "text-muted-foreground"}`}
