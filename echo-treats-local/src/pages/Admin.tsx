@@ -7,7 +7,7 @@ import {
   ArrowLeft, Package, ShoppingBag, Plus, Trash2, Edit2, Check, Eye,
   MessageSquare, Star, Bell, X, Upload, Filter, Download, Users,
   BarChart2, Tag, Store, TrendingUp, ChevronDown, Search, RefreshCw,
-  ToggleLeft, ToggleRight, Image as ImageIcon,
+  ToggleLeft, ToggleRight, Image as ImageIcon, Megaphone, Instagram, Link,
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { toast } from "sonner";
@@ -39,7 +39,7 @@ const Admin = () => {
   const { user, isAdmin, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
-  const [tab, setTab] = useState<"products" | "orders" | "custom" | "feedback" | "analytics" | "users" | "categories" | "store">("products");
+  const [tab, setTab] = useState<"products" | "orders" | "custom" | "feedback" | "analytics" | "users" | "categories" | "store" | "banners" | "instagram">("products");
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -62,6 +62,9 @@ const Admin = () => {
   const [orderSearch, setOrderSearch] = useState("");
   const [expandedOrder, setExpandedOrder] = useState<string | null>(null);
 
+  const [productCategoryFilter, setProductCategoryFilter] = useState("all");
+  const [productSearch, setProductSearch] = useState("");
+
   const [categoryForm, setCategoryForm] = useState({ name: "", slug: "", description: "" });
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [showAddCategory, setShowAddCategory] = useState(false);
@@ -73,6 +76,19 @@ const Admin = () => {
   const [addingUser, setAddingUser] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
 
+  // Announcements
+  const [announcements, setAnnouncements] = useState<any[]>([]);
+  const [announcementText, setAnnouncementText] = useState("");
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState<string | null>(null);
+
+  // Lightbox
+  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+
+  // Instagram posts
+  const [instaPosts, setInstaPosts] = useState<any[]>(Array.from({ length: 5 }, (_, i) => ({ id: null, sort_order: i + 1, post_url: "", image_url: "", _file: null, _preview: null })));
+  const [instaUploading, setInstaUploading] = useState<number | null>(null);
+  const instaFileRefs = useRef<(HTMLInputElement | null)[]>([]);
+
   useEffect(() => {
     if (!authLoading && (!user || !isAdmin)) { navigate("/"); return; }
     void fetchAll();
@@ -81,7 +97,7 @@ const Admin = () => {
   const fetchAll = async () => {
     setDataLoading(true);
     try {
-      const [p, c, o, oi, co, fb, pr, ur] = await Promise.all([
+      const [p, c, o, oi, co, fb, pr, ur, an, ig] = await Promise.all([
         supabase.from("products").select("*").order("created_at", { ascending: false }),
         supabase.from("categories").select("*").order("sort_order"),
         supabase.from("orders").select("*").order("created_at", { ascending: false }),
@@ -90,6 +106,8 @@ const Admin = () => {
         supabase.from("feedback" as any).select("*").order("created_at", { ascending: false }),
         supabase.from("profiles").select("*").order("created_at", { ascending: false }),
         supabase.from("user_roles").select("*"),
+        supabase.from("announcements" as any).select("*").order("sort_order"),
+        supabase.from("instagram_posts" as any).select("*").order("sort_order").limit(6),
       ]);
 
       if (p.data) setProducts(p.data);
@@ -107,6 +125,16 @@ const Admin = () => {
       if (fb.data) setFeedbacks(fb.data as any[]);
       if (pr.data) setProfiles(pr.data);
       if (ur.data) setUserRoles(ur.data);
+      if (an.data) setAnnouncements(an.data as any[]);
+      if (ig.data) {
+        const filled = Array.from({ length: 5 }, (_, i) => {
+          const existing = (ig.data as any[]).find(r => r.sort_order === i + 1);
+          return existing
+            ? { ...existing, _file: null, _preview: null }
+            : { id: null, sort_order: i + 1, post_url: "", image_url: "", _file: null, _preview: null };
+        });
+        setInstaPosts(filled);
+      }
     } catch (err) {
       toast.error("Failed to load admin data. Please refresh.");
     } finally {
@@ -398,6 +426,89 @@ const Admin = () => {
   });
   const maxRevenue = Math.max(...last7Days.map(d => d.actual + d.projected), 1);
 
+  // ── Announcements ─────────────────────────────────────────────
+  const saveAnnouncement = async () => {
+    const text = announcementText.trim();
+    if (!text) { toast.error("Enter announcement text"); return; }
+    if (editingAnnouncementId) {
+      const { error } = await (supabase.from("announcements" as any) as any).update({ text }).eq("id", editingAnnouncementId);
+      if (error) { toast.error("Failed to update"); return; }
+      setAnnouncements(prev => prev.map(a => a.id === editingAnnouncementId ? { ...a, text } : a));
+      toast.success("Announcement updated");
+    } else {
+      const maxOrder = announcements.reduce((m, a) => Math.max(m, a.sort_order ?? 0), 0);
+      const { data, error } = await (supabase.from("announcements" as any) as any)
+        .insert({ text, is_active: true, sort_order: maxOrder + 1 })
+        .select()
+        .single();
+      if (error) { toast.error("Failed to add"); return; }
+      setAnnouncements(prev => [...prev, data]);
+      toast.success("Announcement added");
+    }
+    setAnnouncementText("");
+    setEditingAnnouncementId(null);
+  };
+
+  const deleteAnnouncement = async (id: string) => {
+    const { error } = await (supabase.from("announcements" as any) as any).delete().eq("id", id);
+    if (error) { toast.error("Failed to delete"); return; }
+    setAnnouncements(prev => prev.filter(a => a.id !== id));
+    toast.success("Announcement deleted");
+  };
+
+  const toggleAnnouncement = async (id: string, current: boolean) => {
+    const { error } = await (supabase.from("announcements" as any) as any).update({ is_active: !current }).eq("id", id);
+    if (error) { toast.error("Failed to update"); return; }
+    setAnnouncements(prev => prev.map(a => a.id === id ? { ...a, is_active: !current } : a));
+  };
+
+  // ── Instagram Posts ───────────────────────────────────────────
+  const updateInstaSlot = (index: number, changes: Partial<typeof instaPosts[0]>) => {
+    setInstaPosts(prev => prev.map((p, i) => i === index ? { ...p, ...changes } : p));
+  };
+
+  const handleInstaImageSelect = (index: number, file: File) => {
+    if (!file.type.startsWith("image/")) { toast.error("Select an image"); return; }
+    updateInstaSlot(index, { _file: file, _preview: URL.createObjectURL(file) });
+  };
+
+  const saveInstaSlot = async (index: number) => {
+    const slot = instaPosts[index];
+    if (!slot.post_url && !slot._file && !slot.image_url) {
+      toast.error("Add an Instagram URL and image");
+      return;
+    }
+    setInstaUploading(index);
+    let imageUrl = slot.image_url;
+    if (slot._file) {
+      const ext = (slot._file as File).name.split(".").pop();
+      const fileName = `instagram/${Date.now()}-${index}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("product-images").upload(fileName, slot._file as File, { upsert: true });
+      if (upErr) { toast.error("Image upload failed"); setInstaUploading(null); return; }
+      const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(fileName);
+      imageUrl = urlData.publicUrl;
+    }
+    const payload = { sort_order: slot.sort_order, post_url: slot.post_url, image_url: imageUrl };
+    if (slot.id) {
+      await (supabase.from("instagram_posts" as any) as any).update(payload).eq("id", slot.id);
+    } else {
+      const { data } = await (supabase.from("instagram_posts" as any) as any).insert(payload).select().single();
+      if (data) updateInstaSlot(index, { id: (data as any).id });
+    }
+    updateInstaSlot(index, { image_url: imageUrl, _file: null, _preview: null });
+    setInstaUploading(null);
+    toast.success(`Slot ${index + 1} saved`);
+  };
+
+  const clearInstaSlot = async (index: number) => {
+    const slot = instaPosts[index];
+    if (slot.id) {
+      await (supabase.from("instagram_posts" as any) as any).delete().eq("id", slot.id);
+    }
+    updateInstaSlot(index, { id: null, post_url: "", image_url: "", _file: null, _preview: null });
+    toast.success(`Slot ${index + 1} cleared`);
+  };
+
   // ── Filtered Orders ───────────────────────────────────────────
   const filteredOrders = orders.filter(o => {
     const matchStatus = orderFilter === "all" || o.status === orderFilter;
@@ -419,9 +530,12 @@ const Admin = () => {
     { key: "feedback", label: "Feedback", icon: MessageSquare },
     { key: "users", label: "Users", icon: Users },
     { key: "analytics", label: "Analytics", icon: BarChart2 },
+    { key: "banners", label: "Banners", icon: Megaphone },
+    { key: "instagram", label: "Instagram", icon: Instagram },
   ];
 
   return (
+    <>
     <div className="min-h-screen bg-background">
       <div className="container py-8 max-w-6xl">
 
@@ -533,6 +647,41 @@ const Admin = () => {
               </button>
             </div>
 
+            {/* Search + Category Filter */}
+            <div className="space-y-3 mb-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  placeholder="Search products..."
+                  value={productSearch}
+                  onChange={e => setProductSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                />
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setProductCategoryFilter("all")}
+                  className={`px-3 py-1.5 rounded-lg font-body text-xs font-medium transition-colors ${productCategoryFilter === "all" ? "bg-foreground text-background" : "bg-secondary text-muted-foreground hover:text-foreground"}`}
+                >
+                  All ({products.length})
+                </button>
+                {categories.map(c => {
+                  const count = products.filter(p => p.category_id === c.id).length;
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => setProductCategoryFilter(c.id)}
+                      className={`px-3 py-1.5 rounded-lg font-body text-xs font-medium transition-colors ${productCategoryFilter === c.id ? "bg-foreground text-background" : "bg-secondary text-muted-foreground hover:text-foreground"}`}
+                    >
+                      {c.name} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {showAddProduct && (
               <div className="bg-card rounded-2xl p-6 shadow-card border border-border/50 mb-6 space-y-4">
                 <div className="flex items-center justify-between">
@@ -624,7 +773,11 @@ const Admin = () => {
             )}
 
             <div className="space-y-2">
-              {products.map(p => (
+              {products.filter(p => {
+                const matchCat = productCategoryFilter === "all" || p.category_id === productCategoryFilter;
+                const matchSearch = !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase());
+                return matchCat && matchSearch;
+              }).map(p => (
                 <div key={p.id} className="flex items-center gap-4 bg-card rounded-xl p-4 border border-border/50">
                   {p.image_url
                     ? <img src={p.image_url} alt={p.name} className="w-12 h-12 rounded-lg object-cover shrink-0" />
@@ -807,11 +960,30 @@ const Admin = () => {
                   <span>Occasion: {co.occasion || "—"}</span>
                   <span>Type: {co.product_type || "—"}</span>
                   <span>Flavor: {co.flavor || "—"}</span>
-                  <span>Budget: {co.budget || "—"}</span>
+                  <span>Budget: {(co as any).budget || "—"}</span>
                   <span>Size: {co.size_quantity || "—"}</span>
                   <span>Date: {co.delivery_date || "—"}</span>
                 </div>
-                {co.message && <p className="mt-2 font-body text-xs text-foreground">"{co.message}"</p>}
+                {(() => {
+                  const refMatch = co.message?.match(/\[Reference Image\]\s*(https?:\/\/\S+)/);
+                  const refUrl = refMatch?.[1] || null;
+                  const cleanMsg = co.message?.replace(/\[Reference Image\]\s*https?:\/\/\S+/, "").trim();
+                  return (
+                    <div className="mt-2 space-y-2">
+                      {cleanMsg && <p className="font-body text-xs text-foreground">"{cleanMsg}"</p>}
+                      {refUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setLightboxImage(refUrl)}
+                          className="block rounded-lg overflow-hidden border border-border hover:border-primary transition-colors"
+                          title="Click to view full image"
+                        >
+                          <img src={refUrl} alt="Reference" className="h-20 w-32 object-cover" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             ))}
           </motion.div>
@@ -1229,8 +1401,196 @@ const Admin = () => {
           </motion.div>
         )}
 
+        {/* ── Instagram Tab ── */}
+        {!dataLoading && tab === "instagram" && (
+          <motion.div key="instagram" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+            <div className="bg-card border border-border/50 rounded-2xl p-5">
+              <h3 className="font-heading text-base font-semibold text-foreground mb-1">Instagram Grid</h3>
+              <p className="font-body text-xs text-muted-foreground">Set up to 6 posts. Paste the Instagram post URL and upload the post image. Clicking the image on the site will open the post.</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              {instaPosts.map((slot, i) => {
+                const preview = slot._preview || slot.image_url;
+                const isSaving = instaUploading === i;
+                return (
+                  <div key={i} className="bg-card border border-border/50 rounded-2xl overflow-hidden">
+                    {/* Image slot */}
+                    <div
+                      className="relative aspect-square bg-secondary/30 cursor-pointer group"
+                      onClick={() => !preview && instaFileRefs.current[i]?.click()}
+                    >
+                      {preview ? (
+                        <>
+                          <img src={preview} alt={`Slot ${i + 1}`} className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                            <button type="button" onClick={e => { e.stopPropagation(); instaFileRefs.current[i]?.click(); }}
+                              className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors">
+                              <Upload className="w-4 h-4 text-white" />
+                            </button>
+                            <button type="button" onClick={e => { e.stopPropagation(); clearInstaSlot(i); }}
+                              className="p-2 bg-white/20 hover:bg-red-500/70 rounded-full transition-colors">
+                              <Trash2 className="w-4 h-4 text-white" />
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-muted-foreground hover:text-primary transition-colors">
+                          <Upload className="w-6 h-6" />
+                          <span className="font-body text-xs">Upload image</span>
+                        </div>
+                      )}
+                      <span className="absolute top-2 left-2 w-6 h-6 bg-black/50 text-white rounded-full text-[11px] font-bold flex items-center justify-center">{i + 1}</span>
+                    </div>
+                    <input ref={el => instaFileRefs.current[i] = el} type="file" accept="image/*" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) handleInstaImageSelect(i, f); e.target.value = ""; }} />
+
+                    {/* URL + Save */}
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Link className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <input
+                          type="url"
+                          placeholder="https://instagram.com/p/..."
+                          value={slot.post_url}
+                          onChange={e => updateInstaSlot(i, { post_url: e.target.value })}
+                          className="flex-1 text-xs font-body bg-secondary/50 border border-border rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/30 min-w-0"
+                        />
+                      </div>
+                      <button type="button" onClick={() => saveInstaSlot(i)} disabled={isSaving}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 bg-foreground text-background rounded-lg font-body text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-50">
+                        <Check className="w-3.5 h-3.5" />
+                        {isSaving ? "Saving..." : "Save"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Banners / Announcements ── */}
+        {!dataLoading && tab === "banners" && (
+          <motion.div key="banners" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+            <div className="bg-card border border-border/50 rounded-2xl p-5 space-y-4">
+              <h3 className="font-heading text-base font-semibold text-foreground">
+                {editingAnnouncementId ? "Edit Announcement" : "Add New Announcement"}
+              </h3>
+              <div className="flex gap-3">
+                <input
+                  value={announcementText}
+                  onChange={e => setAnnouncementText(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && saveAnnouncement()}
+                  placeholder="e.g. 🎉 Free delivery this weekend!"
+                  className={inputCls}
+                />
+                <button
+                  type="button"
+                  onClick={saveAnnouncement}
+                  className="shrink-0 flex items-center gap-2 px-4 py-2 bg-foreground text-background rounded-xl font-body text-sm font-semibold hover:opacity-90 transition-opacity"
+                >
+                  <Check className="w-4 h-4" />
+                  {editingAnnouncementId ? "Save" : "Add"}
+                </button>
+                {editingAnnouncementId && (
+                  <button
+                    type="button"
+                    onClick={() => { setEditingAnnouncementId(null); setAnnouncementText(""); }}
+                    className="shrink-0 px-3 py-2 border border-border rounded-xl font-body text-sm text-muted-foreground hover:bg-secondary transition-colors"
+                  >
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="bg-card border border-border/50 rounded-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-border/50">
+                <h3 className="font-heading text-base font-semibold text-foreground">
+                  Announcements ({announcements.length})
+                </h3>
+                <p className="font-body text-xs text-muted-foreground mt-0.5">Toggle to show/hide on the site banner</p>
+              </div>
+              {announcements.length === 0 ? (
+                <div className="px-5 py-10 text-center">
+                  <Megaphone className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
+                  <p className="font-body text-sm text-muted-foreground">No announcements yet. Add one above.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-border/50">
+                  {announcements.map(a => (
+                    <div key={a.id} className="flex items-center gap-3 px-5 py-4">
+                      <button
+                        type="button"
+                        onClick={() => toggleAnnouncement(a.id, a.is_active)}
+                        className="shrink-0"
+                        title={a.is_active ? "Active — click to hide" : "Hidden — click to show"}
+                      >
+                        {a.is_active
+                          ? <ToggleRight className="w-6 h-6 text-green-500" />
+                          : <ToggleLeft className="w-6 h-6 text-muted-foreground" />}
+                      </button>
+                      <p className={`flex-1 font-body text-sm ${a.is_active ? "text-foreground" : "text-muted-foreground line-through"}`}>
+                        {a.text}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => { setEditingAnnouncementId(a.id); setAnnouncementText(a.text); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+                        className="p-2 hover:bg-secondary rounded-lg transition-colors"
+                        title="Edit"
+                      >
+                        <Edit2 className="w-4 h-4 text-muted-foreground" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deleteAnnouncement(a.id)}
+                        className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4 text-destructive" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
       </div>
     </div>
+
+    {/* ── Image Lightbox ── */}
+    <AnimatePresence>
+      {lightboxImage && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] bg-black/80 flex items-center justify-center p-4"
+          onClick={() => setLightboxImage(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setLightboxImage(null)}
+            className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+          >
+            <X className="w-6 h-6 text-white" />
+          </button>
+          <motion.img
+            initial={{ scale: 0.9 }}
+            animate={{ scale: 1 }}
+            exit={{ scale: 0.9 }}
+            src={lightboxImage}
+            alt="Reference"
+            className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+        </motion.div>
+      )}
+    </AnimatePresence>
+    </>
   );
 };
 

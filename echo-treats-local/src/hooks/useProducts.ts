@@ -29,12 +29,12 @@ export const useProducts = () => {
     const [prodRes, catRes] = await Promise.all([
       supabase
         .from("products")
-        .select("id, name, description, price, image_url, tags, is_featured, is_available, sort_order, category_id, occasion")
+        .select("id, name, description, price, image_url, tags, is_featured, is_available, sort_order, category_id, occasion, ingredients, created_at, updated_at")
         .eq("is_available", true)
         .order("sort_order"),
       supabase
         .from("categories")
-        .select("id, name, slug, description, sort_order")
+        .select("id, name, slug, description, sort_order, created_at, image_url")
         .order("sort_order"),
     ]);
 
