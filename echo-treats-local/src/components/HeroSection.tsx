@@ -79,40 +79,40 @@ const HeroSection = () => {
         <div className="absolute inset-0 bg-gradient-to-b from-blush/80 via-background/60 to-background" />
       </div>
 
-      <div className="relative container min-h-screen flex flex-col pt-8 md:pt-10 pb-6">
+      <div className="relative container flex flex-col md:min-h-screen pt-6 md:pt-10 pb-6">
 
         {/* Logo — stays at top, don't move */}
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.6 }}
-          className="flex justify-center"
+          className="flex justify-center mb-6 md:mb-0"
         >
           <img src={logo} alt="Echo Treats" className="h-16 md:h-24 object-contain drop-shadow-md" />
         </motion.div>
 
-        {/* Centre content — grows to fill available space */}
+        {/* Centre content */}
         <motion.div
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.1 }}
-          className="flex-1 flex flex-col items-center justify-center text-center max-w-2xl mx-auto w-full"
+          className="md:flex-1 flex flex-col items-center md:justify-center text-center max-w-2xl mx-auto w-full"
         >
-          <p className="text-xs md:text-sm tracking-widest text-muted-foreground mb-2">WELCOME TO ECHOTREATS</p>
+          <p className="text-xs md:text-sm tracking-widest text-muted-foreground mb-1 md:mb-2">WELCOME TO ECHOTREATS</p>
 
-          <h1 className="text-3xl md:text-5xl font-semibold leading-tight mb-3">
+          <h1 className="text-3xl md:text-5xl font-semibold leading-tight mb-2 md:mb-3">
             Deliciously Made
             <br />
             <span className="italic text-primary">Bakery</span> Treats
           </h1>
 
-          <p className="text-muted-foreground text-sm md:text-base mb-5">
+          <p className="text-muted-foreground text-sm md:text-base mb-4 md:mb-5">
             Artisan & custom, made-to-order
             <br />
             From our kitchen to your celebrations
           </p>
 
-          <div className="flex justify-center gap-3 flex-wrap mb-5">
+          <div className="flex justify-center gap-3 flex-wrap mb-4 md:mb-5">
             <button
               type="button"
               onClick={() => scrollTo("#products")}
@@ -170,10 +170,10 @@ const HeroSection = () => {
           </div>
         </motion.div>
 
-        {/* Category buttons — pinned to bottom */}
-        <div>
+        {/* Category buttons */}
+        <div className="mt-6 md:mt-0">
           {/* Mobile: 4×2 grid */}
-          <div className="grid grid-cols-4 gap-x-4 gap-y-4 md:hidden">
+          <div className="grid grid-cols-4 gap-x-3 gap-y-3 md:hidden">
             {categories.map((cat) => (
               <button
                 key={cat.label}
