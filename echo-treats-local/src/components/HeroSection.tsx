@@ -79,7 +79,7 @@ const HeroSection = () => {
         <div className="absolute inset-0 bg-gradient-to-b from-blush/80 via-background/60 to-background" />
       </div>
 
-      <div className="relative container min-h-screen flex flex-col justify-between pt-16 md:pt-10 pb-8 md:pb-6">
+      <div className="relative container flex flex-col md:min-h-screen md:justify-between pt-16 md:pt-10 pb-6 gap-5 md:gap-0">
 
         {/* Logo */}
         <motion.div
@@ -131,7 +131,7 @@ const HeroSection = () => {
 
           {/* Search */}
           <div className="w-full max-w-md relative">
-            <div className="w-full flex items-center rounded-full border bg-white/80 backdrop-blur shadow-md px-4 py-3 gap-2">
+            <div className="w-full flex items-center rounded-full border bg-white/80 backdrop-blur shadow-md px-4 py-2.5 gap-2">
               <Search className="w-4 h-4 text-foreground/50 shrink-0" />
               <input
                 value={query}
