@@ -79,16 +79,16 @@ const HeroSection = () => {
         <div className="absolute inset-0 bg-gradient-to-b from-blush/80 via-background/60 to-background" />
       </div>
 
-      <div className="relative container min-h-screen flex flex-col justify-between pt-14 md:pt-10 pb-6">
+      <div className="relative container min-h-screen flex flex-col justify-between pt-16 md:pt-10 pb-8 md:pb-6">
 
-        {/* Logo — stays at top */}
+        {/* Logo */}
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.6 }}
           className="flex justify-center"
         >
-          <img src={logo} alt="Echo Treats" className="h-12 md:h-24 object-contain drop-shadow-md" />
+          <img src={logo} alt="Echo Treats" className="h-14 md:h-24 object-contain drop-shadow-md" />
         </motion.div>
 
         {/* Centre content */}
@@ -100,7 +100,7 @@ const HeroSection = () => {
         >
           <p className="text-xs md:text-sm tracking-widest text-muted-foreground mb-1 md:mb-2">WELCOME TO ECHOTREATS</p>
 
-          <h1 className="text-2xl md:text-5xl font-semibold leading-tight mb-2 md:mb-3">
+          <h1 className="text-3xl md:text-5xl font-semibold leading-tight mb-2 md:mb-3">
             Deliciously Made
             <br />
             <span className="italic text-primary">Bakery</span> Treats
@@ -116,14 +116,14 @@ const HeroSection = () => {
             <button
               type="button"
               onClick={() => scrollTo("#products")}
-              className="px-6 py-2.5 bg-primary text-white rounded-full shadow-md hover:scale-105 transition text-sm"
+              className="px-8 py-2.5 bg-primary text-white rounded-full shadow-md hover:scale-105 transition text-sm"
             >
               View Menu
             </button>
             <button
               type="button"
               onClick={() => scrollTo("#custom")}
-              className="px-6 py-2.5 bg-white/70 border rounded-full shadow-md hover:scale-105 transition text-sm"
+              className="px-8 py-2.5 bg-white/70 border rounded-full shadow-md hover:scale-105 transition text-sm"
             >
               Custom Orders
             </button>
@@ -131,7 +131,7 @@ const HeroSection = () => {
 
           {/* Search */}
           <div className="w-full max-w-md relative">
-            <div className="w-full flex items-center rounded-full border bg-white/80 backdrop-blur shadow-md px-4 py-2.5 gap-2">
+            <div className="w-full flex items-center rounded-full border bg-white/80 backdrop-blur shadow-md px-4 py-3 gap-2">
               <Search className="w-4 h-4 text-foreground/50 shrink-0" />
               <input
                 value={query}
@@ -173,20 +173,20 @@ const HeroSection = () => {
         {/* Category buttons */}
         <div>
           {/* Mobile: 4×2 grid */}
-          <div className="grid grid-cols-4 gap-x-3 gap-y-3 md:hidden">
+          <div className="grid grid-cols-4 gap-x-2 gap-y-4 md:hidden">
             {categories.map((cat) => (
               <button
                 key={cat.label}
                 type="button"
                 onClick={() => scrollTo(cat.href)}
-                className="flex flex-col items-center justify-end gap-1 hover:scale-105 transition"
+                className="flex flex-col items-center justify-end gap-1.5 hover:scale-105 transition"
               >
                 <img
                   src={cat.img}
                   alt={cat.label}
-                  className="w-10 h-10 object-contain drop-shadow-md"
+                  className="w-14 h-14 object-contain drop-shadow-md"
                 />
-                <span className="text-[10px] text-center leading-tight font-medium drop-shadow">{cat.label}</span>
+                <span className="text-xs text-center leading-tight font-medium drop-shadow">{cat.label}</span>
               </button>
             ))}
           </div>
