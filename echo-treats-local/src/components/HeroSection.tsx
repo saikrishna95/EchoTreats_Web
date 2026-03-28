@@ -73,20 +73,20 @@ const HeroSection = () => {
 
   return (
     <>
-    <section id="hero-section" className="relative overflow-hidden gradient-hero md:min-h-screen">
+    <section id="hero-section" className="relative overflow-hidden gradient-hero min-h-screen">
       <div className="absolute inset-0">
         <img src={heroBg} alt="" className="w-full h-full object-cover opacity-50" />
         <div className="absolute inset-0 bg-gradient-to-b from-blush/80 via-background/60 to-background" />
       </div>
 
-      <div className="relative container flex flex-col md:min-h-screen pt-4 md:pt-10 pb-6">
+      <div className="relative container min-h-screen flex flex-col justify-between pt-14 md:pt-10 pb-6">
 
-        {/* Logo — stays at top, don't move */}
+        {/* Logo — stays at top */}
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.6 }}
-          className="flex justify-center mb-3 md:mb-0"
+          className="flex justify-center"
         >
           <img src={logo} alt="Echo Treats" className="h-12 md:h-24 object-contain drop-shadow-md" />
         </motion.div>
@@ -96,11 +96,11 @@ const HeroSection = () => {
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.7, delay: 0.1 }}
-          className="md:flex-1 flex flex-col items-center md:justify-center text-center max-w-2xl mx-auto w-full"
+          className="flex flex-col items-center text-center max-w-2xl mx-auto w-full"
         >
           <p className="text-xs md:text-sm tracking-widest text-muted-foreground mb-1 md:mb-2">WELCOME TO ECHOTREATS</p>
 
-          <h1 className="text-3xl md:text-5xl font-semibold leading-tight mb-2 md:mb-3">
+          <h1 className="text-2xl md:text-5xl font-semibold leading-tight mb-2 md:mb-3">
             Deliciously Made
             <br />
             <span className="italic text-primary">Bakery</span> Treats
@@ -171,7 +171,7 @@ const HeroSection = () => {
         </motion.div>
 
         {/* Category buttons */}
-        <div className="mt-4 md:mt-0">
+        <div>
           {/* Mobile: 4×2 grid */}
           <div className="grid grid-cols-4 gap-x-3 gap-y-3 md:hidden">
             {categories.map((cat) => (
