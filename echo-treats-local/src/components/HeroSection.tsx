@@ -73,22 +73,22 @@ const HeroSection = () => {
 
   return (
     <>
-    <section id="hero-section" className="relative overflow-hidden gradient-hero min-h-screen">
+    <section id="hero-section" className="relative overflow-hidden gradient-hero md:min-h-screen">
       <div className="absolute inset-0">
         <img src={heroBg} alt="" className="w-full h-full object-cover opacity-50" />
         <div className="absolute inset-0 bg-gradient-to-b from-blush/80 via-background/60 to-background" />
       </div>
 
-      <div className="relative container flex flex-col md:min-h-screen pt-6 md:pt-10 pb-6">
+      <div className="relative container flex flex-col md:min-h-screen pt-4 md:pt-10 pb-6">
 
         {/* Logo — stays at top, don't move */}
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.6 }}
-          className="flex justify-center mb-6 md:mb-0"
+          className="flex justify-center mb-3 md:mb-0"
         >
-          <img src={logo} alt="Echo Treats" className="h-16 md:h-24 object-contain drop-shadow-md" />
+          <img src={logo} alt="Echo Treats" className="h-12 md:h-24 object-contain drop-shadow-md" />
         </motion.div>
 
         {/* Centre content */}
@@ -106,13 +106,13 @@ const HeroSection = () => {
             <span className="italic text-primary">Bakery</span> Treats
           </h1>
 
-          <p className="text-muted-foreground text-sm md:text-base mb-4 md:mb-5">
+          <p className="text-muted-foreground text-sm md:text-base mb-3 md:mb-5">
             Artisan & custom, made-to-order
             <br />
             From our kitchen to your celebrations
           </p>
 
-          <div className="flex justify-center gap-3 flex-wrap mb-4 md:mb-5">
+          <div className="flex justify-center gap-3 flex-wrap mb-3 md:mb-5">
             <button
               type="button"
               onClick={() => scrollTo("#products")}
@@ -171,7 +171,7 @@ const HeroSection = () => {
         </motion.div>
 
         {/* Category buttons */}
-        <div className="mt-6 md:mt-0">
+        <div className="mt-4 md:mt-0">
           {/* Mobile: 4×2 grid */}
           <div className="grid grid-cols-4 gap-x-3 gap-y-3 md:hidden">
             {categories.map((cat) => (
