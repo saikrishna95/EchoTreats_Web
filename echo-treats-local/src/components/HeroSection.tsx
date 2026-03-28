@@ -112,7 +112,7 @@ const HeroSection = () => {
             From our kitchen to your celebrations
           </p>
 
-          <div className="flex justify-center gap-3 flex-wrap mb-3 md:mb-5">
+          <div className="flex justify-center gap-3 flex-wrap mt-4 mb-4 md:mt-0 md:mb-5">
             <button
               type="button"
               onClick={() => scrollTo("#products")}
@@ -130,7 +130,7 @@ const HeroSection = () => {
           </div>
 
           {/* Search */}
-          <div className="w-full max-w-md relative">
+          <div className="w-full max-w-md relative mb-4 md:mb-0">
             <div className="w-full flex items-center rounded-full border bg-white/80 backdrop-blur shadow-md px-4 py-2.5 gap-2">
               <Search className="w-4 h-4 text-foreground/50 shrink-0" />
               <input
