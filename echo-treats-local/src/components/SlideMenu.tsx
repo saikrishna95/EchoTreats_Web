@@ -1,4 +1,7 @@
 import { X, LogIn, LogOut, UserCircle, ShoppingBag, Heart, Shield } from "lucide-react";
+import { toast } from "sonner";
+import SignOutModal from "@/components/SignOutModal";
+import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -26,6 +29,7 @@ const shopItems = [
 const SlideMenu = ({ isOpen, onClose }: SlideMenuProps) => {
   const { user, isAdmin, signOut } = useAuth();
   const navigate = useNavigate();
+  const [showSignOut, setShowSignOut] = useState(false);
 
   const handleClick = (href: string) => {
     onClose();
@@ -39,15 +43,16 @@ const SlideMenu = ({ isOpen, onClose }: SlideMenuProps) => {
   };
 
   const handleAuth = () => {
-    onClose();
     if (user) {
-      signOut();
+      setShowSignOut(true);
     } else {
+      onClose();
       navigate("/auth");
     }
   };
 
   return (
+    <>
     <AnimatePresence>
       {isOpen && (
         <>
@@ -134,6 +139,13 @@ const SlideMenu = ({ isOpen, onClose }: SlideMenuProps) => {
         </>
       )}
     </AnimatePresence>
+
+    <SignOutModal
+      open={showSignOut}
+      onCancel={() => setShowSignOut(false)}
+      onConfirm={async () => { setShowSignOut(false); onClose(); await signOut(); toast.success("Signed out successfully"); }}
+    />
+    </>
   );
 };
 

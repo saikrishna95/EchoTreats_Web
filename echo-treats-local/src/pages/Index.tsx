@@ -16,12 +16,18 @@ import CartDrawer from "@/components/CartDrawer";
 
 import { useProducts } from "@/hooks/useProducts";
 import { mapDbProduct } from "@/lib/productMapper";
+import { supabase } from "@/integrations/supabase/client";
 
 const Index = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [heroVisible, setHeroVisible] = useState(true);
 
   const { getProductsByCategory, loading } = useProducts();
+
+  // Track page visit
+  useEffect(() => {
+    supabase.from("site_visits" as any).insert({ visited_at: new Date().toISOString(), referrer: document.referrer || null, user_agent: navigator.userAgent }).then(() => {});
+  }, []);
   const location = useLocation();
   const navigate = useNavigate();
 

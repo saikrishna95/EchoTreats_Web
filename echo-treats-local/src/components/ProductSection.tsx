@@ -55,7 +55,7 @@ const ProductSection = ({ id, title, subtitle, products, rawProducts, accent, ca
         >
           <button
             onClick={() => navigate(categorySlug ? `/category/${categorySlug}` : `/#${id}`, categorySlug ? { state: { returnToSection: id } } : undefined)}
-            className="inline-flex items-center gap-2 px-6 py-2.5 font-body text-sm font-medium text-foreground border border-border rounded-full hover:bg-secondary transition-colors"
+            className="inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 font-body text-sm font-medium text-foreground border border-border rounded-full hover:bg-secondary transition-colors whitespace-nowrap"
           >
             View Full Collection
             <ArrowRight className="w-4 h-4" />

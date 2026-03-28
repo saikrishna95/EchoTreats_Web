@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
+import { toast } from "sonner";
 import { Menu, ShoppingBag, User, Heart, LogIn, LogOut, Shield, UserCircle } from "lucide-react";
+import SignOutModal from "@/components/SignOutModal";
 import { useCart } from "@/contexts/CartContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWishlist } from "@/hooks/useWishlist";
@@ -20,6 +22,7 @@ const Navbar = ({ onMenuOpen, isHomePage = false, heroVisible = false }: NavbarP
 
   const [pastHero, setPastHero] = useState(!isHomePage);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [showSignOut, setShowSignOut] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -59,6 +62,7 @@ const Navbar = ({ onMenuOpen, isHomePage = false, heroVisible = false }: NavbarP
   const topClass = isHomePage && heroVisible ? "top-6" : "top-0";
 
   return (
+    <>
     <nav
       className={`fixed left-0 right-0 z-40 transition-all duration-500 ease-in-out ${topClass} ${
         pastHero
@@ -178,10 +182,7 @@ const Navbar = ({ onMenuOpen, isHomePage = false, heroVisible = false }: NavbarP
 
                     <button
                       type="button"
-                      onClick={async () => {
-                        setProfileOpen(false);
-                        await signOut();
-                      }}
+                      onClick={() => { setProfileOpen(false); setShowSignOut(true); }}
                       className="w-full px-4 py-2.5 text-left text-red-500 hover:bg-secondary transition-colors"
                     >
                       <LogOut className="inline w-4 mr-2" />
@@ -207,6 +208,13 @@ const Navbar = ({ onMenuOpen, isHomePage = false, heroVisible = false }: NavbarP
         </div>
       </div>
     </nav>
+
+    <SignOutModal
+      open={showSignOut}
+      onCancel={() => setShowSignOut(false)}
+      onConfirm={async () => { setShowSignOut(false); await signOut(); toast.success("Signed out successfully"); }}
+    />
+    </>
   );
 };
 

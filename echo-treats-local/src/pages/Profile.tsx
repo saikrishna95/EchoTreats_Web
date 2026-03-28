@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { User, Package, Heart, LogOut, ArrowLeft, Trash2, Pencil, Check, X } from "lucide-react";
+import SignOutModal from "@/components/SignOutModal";
 import { useWishlist } from "@/hooks/useWishlist";
 import { useCart } from "@/contexts/CartContext";
 import { toast } from "sonner";
@@ -31,6 +32,7 @@ const Profile = () => {
   const [editName, setEditName] = useState("");
   const [editPhone, setEditPhone] = useState("");
   const [saving, setSaving] = useState(false);
+  const [showSignOut, setShowSignOut] = useState(false);
 
   const { wishlistItems, loading: wishlistLoading, toggleWishlist } = useWishlist();
   const { addToCart } = useCart();
@@ -81,10 +83,7 @@ const Profile = () => {
     }
   }, [location.state]);
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate("/");
-  };
+  const handleSignOut = () => setShowSignOut(true);
 
   const handleRemoveWishlist = async (productId: string, name: string) => {
     await toggleWishlist(productId);
@@ -199,7 +198,7 @@ const Profile = () => {
         <div className="container py-8 max-w-3xl">
           <button
             type="button"
-            onClick={() => navigate("/")}
+            onClick={() => navigate(-1)}
             className="flex items-center gap-2 font-body text-sm text-muted-foreground hover:text-foreground mb-6"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -224,6 +223,7 @@ const Profile = () => {
   }
 
   return (
+    <>
     <div className="min-h-screen bg-background">
       <div className="container py-8 max-w-3xl">
         <button
@@ -421,6 +421,13 @@ const Profile = () => {
         </motion.div>
       </div>
     </div>
+
+    <SignOutModal
+      open={showSignOut}
+      onCancel={() => setShowSignOut(false)}
+      onConfirm={async () => { setShowSignOut(false); await signOut(); toast.success("Signed out successfully"); navigate("/"); }}
+    />
+    </>
   );
 };
 

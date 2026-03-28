@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Upload, Mail, MessageCircle, Phone, X, ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -42,6 +42,21 @@ const CustomOrderSection = () => {
     flavor: "", size_quantity: "", delivery_date: "", message: "", allergy_note: "",
     address: "", pincode: "",
   });
+
+  // Prefill form with logged-in user details
+  useEffect(() => {
+    if (!user) return;
+    setForm(prev => ({ ...prev, email: user.email || "" }));
+    supabase.from("profiles").select("full_name, phone").eq("user_id", user.id).maybeSingle().then(({ data }) => {
+      if (data) {
+        setForm(prev => ({
+          ...prev,
+          name: prev.name || data.full_name || "",
+          phone: prev.phone || data.phone || "",
+        }));
+      }
+    });
+  }, [user]);
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
@@ -183,25 +198,25 @@ const CustomOrderSection = () => {
           <motion.div initial={{ opacity: 0, x: 20 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.6, delay: 0.2 }} className="bg-background/80 backdrop-blur-sm rounded-3xl p-6 md:p-8 shadow-card border border-border/50">
             <h3 className="font-heading text-xl font-semibold text-foreground mb-6">Request a Custom Quote</h3>
             <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input type="text" placeholder="Name *" value={form.name} onChange={e => update("name", e.target.value)} className={inputCls} required />
                 <input type="email" placeholder="Email *" value={form.email} onChange={e => update("email", e.target.value)} className={inputCls} required />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input type="tel" placeholder="Phone *" value={form.phone} onChange={e => update("phone", e.target.value)} className={inputCls} required />
                 <select value={form.occasion} onChange={e => update("occasion", e.target.value)} className={inputCls}>
                   <option value="">Occasion</option>
                   <option>Birthday</option><option>Anniversary</option><option>Wedding</option><option>Baby Shower</option><option>Corporate</option><option>Festival</option><option>Other</option>
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <select value={form.product_type} onChange={e => update("product_type", e.target.value)} className={inputCls} required>
                   <option value="">Product Type *</option>
                   <option>Cake</option><option>Cupcakes</option><option>Cookies</option><option>Chocolates</option><option>Dessert Box</option><option>Hamper</option>
                 </select>
                 <input type="text" placeholder="Flavor Preference" value={form.flavor} onChange={e => update("flavor", e.target.value)} className={inputCls} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input type="text" placeholder="Size / Quantity" value={form.size_quantity} onChange={e => update("size_quantity", e.target.value)} className={inputCls} />
                 <input type="date" value={form.delivery_date} onChange={e => update("delivery_date", e.target.value)} className={inputCls} />
               </div>
@@ -246,23 +261,23 @@ const CustomOrderSection = () => {
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-2">
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
                 <button
                   type="submit"
                   disabled={loading || uploading}
                   onClick={() => setSubmitChannel("email")}
-                  className="flex items-center justify-center gap-2 py-3.5 bg-primary text-primary-foreground rounded-xl font-body font-semibold text-sm hover:opacity-90 transition-opacity shadow-soft disabled:opacity-50"
+                  className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-primary text-primary-foreground rounded-xl font-body font-semibold text-sm hover:opacity-90 transition-opacity shadow-soft disabled:opacity-50 whitespace-nowrap"
                 >
-                  <Mail className="w-4 h-4" />
+                  <Mail className="w-4 h-4 shrink-0" />
                   {(loading || uploading) && submitChannel === "email" ? "Sending..." : "Send via Email"}
                 </button>
                 <button
                   type="submit"
                   disabled={loading || uploading}
                   onClick={() => setSubmitChannel("whatsapp")}
-                  className="flex items-center justify-center gap-2 py-3.5 bg-[#25D366] text-white rounded-xl font-body font-semibold text-sm hover:opacity-90 transition-opacity shadow-soft disabled:opacity-50"
+                  className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-[#25D366] text-white rounded-xl font-body font-semibold text-sm hover:opacity-90 transition-opacity shadow-soft disabled:opacity-50 whitespace-nowrap"
                 >
-                  <MessageCircle className="w-4 h-4" />
+                  <MessageCircle className="w-4 h-4 shrink-0" />
                   {(loading || uploading) && submitChannel === "whatsapp" ? "Sending..." : "Send via WhatsApp"}
                 </button>
               </div>

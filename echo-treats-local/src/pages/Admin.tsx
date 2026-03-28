@@ -84,6 +84,9 @@ const Admin = () => {
   // Lightbox
   const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
+  // Site visits
+  const [visitStats, setVisitStats] = useState({ total: 0, today: 0, thisWeek: 0, thisMonth: 0 });
+
   // Instagram posts
   const [instaPosts, setInstaPosts] = useState<any[]>(Array.from({ length: 5 }, (_, i) => ({ id: null, sort_order: i + 1, post_url: "", image_url: "", _file: null, _preview: null })));
   const [instaUploading, setInstaUploading] = useState<number | null>(null);
@@ -126,6 +129,24 @@ const Admin = () => {
       if (pr.data) setProfiles(pr.data);
       if (ur.data) setUserRoles(ur.data);
       if (an.data) setAnnouncements(an.data as any[]);
+
+      // Visit stats
+      const now = new Date();
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+      const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const [vTotal, vToday, vWeek, vMonth] = await Promise.all([
+        (supabase.from("site_visits" as any) as any).select("id", { count: "exact", head: true }),
+        (supabase.from("site_visits" as any) as any).select("id", { count: "exact", head: true }).gte("visited_at", todayStart),
+        (supabase.from("site_visits" as any) as any).select("id", { count: "exact", head: true }).gte("visited_at", weekStart),
+        (supabase.from("site_visits" as any) as any).select("id", { count: "exact", head: true }).gte("visited_at", monthStart),
+      ]);
+      setVisitStats({
+        total: vTotal.count ?? 0,
+        today: vToday.count ?? 0,
+        thisWeek: vWeek.count ?? 0,
+        thisMonth: vMonth.count ?? 0,
+      });
       if (ig.data) {
         const filled = Array.from({ length: 5 }, (_, i) => {
           const existing = (ig.data as any[]).find(r => r.sort_order === i + 1);
@@ -1203,6 +1224,28 @@ const Admin = () => {
         {/* ── ANALYTICS TAB ── */}
         {!dataLoading && tab === "analytics" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+
+            {/* Website Visits */}
+            <div className="bg-card rounded-2xl p-5 border border-border/50">
+              <div className="flex items-center gap-2 mb-4">
+                <TrendingUp className="w-4 h-4 text-primary" />
+                <h3 className="font-heading text-base font-semibold text-foreground">Website Visits</h3>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                {[
+                  { label: "Total All Time", value: visitStats.total, color: "text-blue-600" },
+                  { label: "Today", value: visitStats.today, color: "text-green-600" },
+                  { label: "This Week", value: visitStats.thisWeek, color: "text-purple-600" },
+                  { label: "This Month", value: visitStats.thisMonth, color: "text-amber-600" },
+                ].map(s => (
+                  <div key={s.label} className="text-center p-3 bg-secondary/30 rounded-xl">
+                    <p className={`font-heading text-2xl font-bold ${s.color}`}>{s.value.toLocaleString()}</p>
+                    <p className="font-body text-xs text-muted-foreground mt-0.5">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="font-body text-[10px] text-muted-foreground mt-3">Counts homepage loads across all devices & platforms</p>
+            </div>
 
             {/* Row 1 — Revenue KPIs */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
