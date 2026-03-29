@@ -87,7 +87,7 @@ const HeroSection = () => {
           lg:pt-7 lg:pb-8
           gap-5 md:gap-0 lg:gap-0">
 
-          {/* Logo — tight to top on all devices */}
+          {/* Logo — md:pt-0 removes space below logo on tablet */}
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -108,11 +108,11 @@ const HeroSection = () => {
             transition={{ duration: 0.7, delay: 0.1 }}
             className="flex flex-col items-center text-center max-w-2xl mx-auto w-full"
           >
-            <p className="text-xs md:text-sm tracking-widest text-muted-foreground mb-1 md:mb-1">
+            <p className="text-xs md:text-sm tracking-widest text-muted-foreground mb-1">
               WELCOME TO ECHOTREATS
             </p>
 
-            <h1 className="text-3xl md:text-5xl lg:text-6xl font-semibold leading-tight mb-2 md:mb-2">
+            <h1 className="text-3xl md:text-5xl lg:text-6xl font-semibold leading-tight mb-2">
               Deliciously Made
               <br />
               <span className="italic text-primary">Bakery</span> Treats
@@ -124,7 +124,14 @@ const HeroSection = () => {
               From our kitchen to your celebrations
             </p>
 
-            <div className="flex justify-center gap-3 flex-wrap mb-3 md:mb-2">
+            {/* BUTTONS
+                Mobile:  mt-4 mb-4  → space before and after
+                Tablet:  md:mt-4 md:mb-4 → space before and after
+                Web:     lg:mt-0 lg:mb-0 → untouched (web is fine) */}
+            <div className="flex justify-center gap-3 flex-wrap
+              mt-4 mb-4
+              md:mt-4 md:mb-4
+              lg:mt-0 lg:mb-0">
               <button
                 type="button"
                 onClick={() => scrollTo("#products")}
@@ -141,8 +148,10 @@ const HeroSection = () => {
               </button>
             </div>
 
-            {/* Search */}
-            <div className="w-full max-w-md relative mb-0 md:mb-6 lg:mb-8">
+            {/* Search
+                md:mb-0 → removes space after search bar on tablet
+                lg:mb-8 → web untouched */}
+            <div className="w-full max-w-md relative mb-0 md:mb-0 lg:mb-8">
               <div className="w-full flex items-center rounded-full border bg-white/80 backdrop-blur shadow-md px-4 py-2.5 gap-2">
                 <Search className="w-4 h-4 text-foreground/50 shrink-0" />
                 <input
@@ -182,8 +191,11 @@ const HeroSection = () => {
             </div>
           </motion.div>
 
-          {/* Category buttons */}
-          <div className="mt-2 md:mt-1 lg:mt-0">
+          {/* Category buttons
+              md:mt-0 → removes space between search and icons on tablet
+              lg:mt-0 → web untouched */}
+          <div className="mt-2 md:mt-0 lg:mt-0">
+
             {/* Mobile: 4×2 grid */}
             <div className="grid grid-cols-4 gap-x-2 gap-y-3 md:hidden">
               {categories.map((cat) => (
@@ -205,8 +217,10 @@ const HeroSection = () => {
               ))}
             </div>
 
-            {/* Tablet + Desktop: single row */}
-            <div className="hidden md:flex md:justify-center md:gap-6 lg:gap-10 pb-2 md:pb-4">
+            {/* Tablet + Desktop: single row
+                md:pb-4 → tablet bottom padding
+                lg:pb-2 → web untouched */}
+            <div className="hidden md:flex md:justify-center md:gap-6 lg:gap-10 md:pb-4 lg:pb-2">
               {categories.map((cat) => (
                 <button
                   key={cat.label}
@@ -225,6 +239,7 @@ const HeroSection = () => {
                 </button>
               ))}
             </div>
+
           </div>
 
         </div>
