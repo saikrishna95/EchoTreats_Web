@@ -73,13 +73,13 @@ const HeroSection = () => {
 
   return (
     <>
-    <section id="hero-section" className="relative overflow-hidden gradient-hero min-h-screen">
+    <section id="hero-section" className="relative overflow-hidden gradient-hero lg:min-h-screen">
       <div className="absolute inset-0">
         <img src={heroBg} alt="" className="w-full h-full object-cover opacity-50" />
         <div className="absolute inset-0 bg-gradient-to-b from-blush/80 via-background/60 to-background" />
       </div>
 
-      <div className="relative container flex flex-col md:min-h-screen md:justify-between pt-16 md:pt-10 pb-6 gap-5 md:gap-0">
+      <div className="relative container flex flex-col lg:min-h-screen lg:justify-between pt-16 md:pt-20 lg:pt-10 pb-6 gap-5 lg:gap-0">
 
         {/* Logo */}
         <motion.div
@@ -88,7 +88,7 @@ const HeroSection = () => {
           transition={{ duration: 0.6 }}
           className="flex justify-center"
         >
-          <img src={logo} alt="Echo Treats" className="h-14 md:h-24 object-contain drop-shadow-md" />
+          <img src={logo} alt="Echo Treats" className="h-14 md:h-20 lg:h-24 object-contain drop-shadow-md" />
         </motion.div>
 
         {/* Centre content */}
