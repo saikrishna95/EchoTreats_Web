@@ -79,7 +79,7 @@ const HeroSection = () => {
         <div className="absolute inset-0 bg-gradient-to-b from-blush/80 via-background/60 to-background" />
       </div>
 
-      <div className="relative container flex flex-col lg:min-h-screen lg:justify-between pt-16 md:pt-20 lg:pt-10 pb-6 gap-5 lg:gap-0">
+      <div className="relative container flex flex-col lg:min-h-screen lg:justify-between pt-16 portrait:md:pt-14 landscape:md:pt-20 lg:pt-10 pb-6 gap-5 lg:gap-0">
 
         {/* Logo */}
         <motion.div
