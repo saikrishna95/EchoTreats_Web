@@ -92,7 +92,7 @@ const HeroSection = () => {
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6 }}
-            className="flex justify-center pt-0 md:pt-0 lg:pt-2"
+            className="flex justify-center pt-0 md:pt-0 lg:-mt-2"
           >
             <img
               src={logo}
@@ -131,7 +131,7 @@ const HeroSection = () => {
             <div className="flex justify-center gap-3 flex-wrap
               mt-4 mb-4
               md:mt-4 md:mb-4
-              lg:mt-0 lg:mb-0">
+              lg:mt-3 lg:mb-5">
               <button
                 type="button"
                 onClick={() => scrollTo("#products")}
