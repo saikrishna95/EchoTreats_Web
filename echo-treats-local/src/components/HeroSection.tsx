@@ -37,6 +37,7 @@ const categories = [
 const HeroSection = () => {
   const [query, setQuery] = useState("");
   const [selectedProduct, setSelectedProduct] = useState<ProductRow | null>(null);
+
   const { products } = useProducts();
   const { addToCart } = useCart();
   const { user } = useAuth();
@@ -49,12 +50,15 @@ const HeroSection = () => {
 
   const filtered = useMemo(() => {
     if (query.trim().length < 2) return [];
+
     const q = query.toLowerCase();
+
     return products
-      .filter((p) =>
-        p.name.toLowerCase().includes(q) ||
-        p.description?.toLowerCase().includes(q) ||
-        p.tags?.some((t) => t.toLowerCase().includes(q))
+      .filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.description?.toLowerCase().includes(q) ||
+          p.tags?.some((t) => t.toLowerCase().includes(q))
       )
       .slice(0, 6)
       .map((p) => ({ raw: p, mapped: mapDbProduct(p) }));
@@ -66,189 +70,264 @@ const HeroSection = () => {
       navigate("/auth");
       return;
     }
+
     await addToCart(productId);
     toast.success(`${productName} added to cart`);
   };
+
+  const renderButtons = (buttonClassName = "") => (
+    <div className="flex justify-center gap-3 flex-wrap">
+      <button
+        type="button"
+        onClick={() => scrollTo("#products")}
+        className={`px-6 py-3 bg-primary text-white rounded-full hover:scale-105 transition ${buttonClassName}`}
+      >
+        View Menu
+      </button>
+
+      <button
+        type="button"
+        onClick={() => scrollTo("#custom")}
+        className={`px-6 py-3 bg-white/70 border rounded-full hover:scale-105 transition ${buttonClassName}`}
+      >
+        Custom Orders
+      </button>
+    </div>
+  );
+
+  const renderSearch = (wrapperClassName = "", maxWidthClassName = "max-w-md") => (
+    <div className={wrapperClassName}>
+      <div className={`${maxWidthClassName} mx-auto relative`}>
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground z-[1]" />
+
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search treats..."
+          aria-label="Search treats"
+          className="w-full pl-10 pr-4 py-3 rounded-full border bg-white/80 backdrop-blur shadow-sm"
+        />
+
+        {filtered.length > 0 && (
+          <div className="absolute w-full bg-white mt-2 rounded-xl shadow max-h-60 overflow-auto z-20">
+            {filtered.map(({ raw, mapped: p }) => (
+              <div
+                key={p.id}
+                className="flex items-center justify-between gap-3 p-3 hover:bg-gray-100 cursor-pointer"
+                onClick={() => {
+                  setSelectedProduct(raw);
+                  setQuery("");
+                }}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <img
+                    src={p.image}
+                    alt={p.name}
+                    className="w-10 h-10 rounded object-cover"
+                  />
+                  <div className="text-left min-w-0">
+                    <p className="text-sm truncate">{p.name}</p>
+                    <p className="text-xs text-muted-foreground">{p.price}</p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleAdd(p.id, p.name);
+                  }}
+                  className="shrink-0 px-3 py-1.5 text-xs rounded-full bg-primary text-white hover:opacity-90"
+                >
+                  Add
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderIconItem = (
+    cat: { img: string; label: string; href: string },
+    imgClassName: string,
+    textClassName: string
+  ) => (
+    <button
+      key={cat.label}
+      type="button"
+      onClick={() => scrollTo(cat.href)}
+      className="flex flex-col items-center justify-start hover:scale-105 transition"
+    >
+      <img
+        src={cat.img}
+        alt={cat.label}
+        className={`${imgClassName} object-contain`}
+      />
+      <span className={`${textClassName} text-center leading-tight mt-2`}>
+        {cat.label}
+      </span>
+    </button>
+  );
 
   return (
     <>
       <section
         id="hero-section"
-        className="relative overflow-hidden gradient-hero min-h-screen"
+        className="relative overflow-hidden gradient-hero min-h-[90vh]"
       >
         <div className="absolute inset-0">
-          <img src={heroBg} alt="" className="w-full h-full object-cover opacity-50" />
+          <img
+            src={heroBg}
+            alt=""
+            className="w-full h-full object-cover opacity-50"
+          />
           <div className="absolute inset-0 bg-gradient-to-b from-blush/80 via-background/60 to-background" />
         </div>
 
-        <div className="relative container flex flex-col md:min-h-screen md:justify-between
-          pt-12 pb-6
-          md:pt-2 md:pb-4
-          lg:pt-7 lg:pb-8
-          gap-5 md:gap-0 lg:gap-0">
-
-          {/* Logo — md:pt-0 removes space below logo on tablet */}
+        {/* MOBILE */}
+        <div className="relative container pt-12 pb-6 md:hidden">
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6 }}
-            className="flex justify-center pt-0 md:pt-0 lg:-mt-2"
+            className="flex justify-center mt-1 mb-2"
           >
-            <img
-              src={logo}
-              alt="Echo Treats"
-              className="h-12 md:h-14 lg:h-20 object-contain drop-shadow-md"
-            />
+            <img src={logo} alt="Echo Treats" className="h-14 object-contain" />
           </motion.div>
 
-          {/* Centre content */}
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.7, delay: 0.1 }}
-            className="flex flex-col items-center text-center max-w-2xl mx-auto w-full"
+            className="text-center max-w-2xl mx-auto"
           >
-            <p className="text-xs md:text-sm tracking-widest text-muted-foreground mb-1">
+            <p className="text-xs tracking-widest text-muted-foreground mb-2">
               WELCOME TO ECHOTREATS
             </p>
 
-            <h1 className="text-3xl md:text-5xl lg:text-6xl font-semibold leading-tight mb-2">
+            <h1 className="text-4xl font-semibold leading-tight mb-3">
               Deliciously Made
               <br />
               <span className="italic text-primary">Bakery</span> Treats
             </h1>
 
-            <p className="text-muted-foreground text-sm md:text-base mb-3 md:mb-2">
+            <p className="text-muted-foreground mb-6">
               Artisan & custom, made-to-order
               <br />
               From our kitchen to your celebrations
             </p>
 
-            {/* BUTTONS
-                Mobile:  mt-4 mb-4  → space before and after
-                Tablet:  md:mt-4 md:mb-4 → space before and after
-                Web:     lg:mt-0 lg:mb-0 → untouched (web is fine) */}
-            <div className="flex justify-center gap-3 flex-wrap
-              mt-4 mb-4
-              md:mt-4 md:mb-4
-              lg:mt-3 lg:mb-5">
-              <button
-                type="button"
-                onClick={() => scrollTo("#products")}
-                className="px-8 py-2.5 bg-primary text-white rounded-full shadow-md hover:scale-105 transition text-sm"
-              >
-                View Menu
-              </button>
-              <button
-                type="button"
-                onClick={() => scrollTo("#custom")}
-                className="px-8 py-2.5 bg-white/70 border rounded-full shadow-md hover:scale-105 transition text-sm"
-              >
-                Custom Orders
-              </button>
-            </div>
-
-            {/* Search
-                md:mb-0 → removes space after search bar on tablet
-                lg:mb-8 → web untouched */}
-            <div className="w-full max-w-md relative mb-0 md:mb-0 lg:mb-8">
-              <div className="w-full flex items-center rounded-full border bg-white/80 backdrop-blur shadow-md px-4 py-2.5 gap-2">
-                <Search className="w-4 h-4 text-foreground/50 shrink-0" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search treats..."
-                  aria-label="Search treats"
-                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                />
-              </div>
-              {filtered.length > 0 && (
-                <div className="absolute w-full bg-white mt-2 rounded-xl shadow max-h-60 overflow-auto z-10">
-                  {filtered.map(({ raw, mapped: p }) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center justify-between gap-3 p-3 hover:bg-gray-100 cursor-pointer"
-                      onClick={() => { setSelectedProduct(raw); setQuery(""); }}
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <img src={p.image} alt={p.name} className="w-10 h-10 rounded object-cover" />
-                        <div className="text-left min-w-0">
-                          <p className="text-sm truncate">{p.name}</p>
-                          <p className="text-xs text-muted-foreground">{p.price}</p>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); handleAdd(p.id, p.name); }}
-                        className="shrink-0 px-3 py-1.5 text-xs rounded-full bg-primary text-white hover:opacity-90"
-                      >
-                        Add
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            {renderButtons("text-sm")}
           </motion.div>
 
-          {/* Category buttons
-              md:mt-0 → removes space between search and icons on tablet
-              lg:mt-0 → web untouched */}
-          <div className="mt-2 md:mt-0 lg:mt-0">
+          {renderSearch("mt-6", "max-w-md")}
 
-            {/* Mobile: 4×2 grid */}
-            <div className="grid grid-cols-4 gap-x-2 gap-y-3 md:hidden">
-              {categories.map((cat) => (
-                <button
-                  key={cat.label}
-                  type="button"
-                  onClick={() => scrollTo(cat.href)}
-                  className="flex flex-col items-center justify-end gap-1 hover:scale-105 transition"
-                >
-                  <img
-                    src={cat.img}
-                    alt={cat.label}
-                    className="w-12 h-12 object-contain drop-shadow-md"
-                  />
-                  <span className="text-xs text-center leading-tight font-medium drop-shadow">
-                    {cat.label}
-                  </span>
-                </button>
-              ))}
+          <div className="mt-10">
+            <div className="grid grid-cols-4 gap-x-3 gap-y-5">
+              {categories.map((cat) => renderIconItem(cat, "w-10 h-10", "text-xs"))}
             </div>
-
-            {/* Tablet + Desktop: single row
-                md:pb-4 → tablet bottom padding
-                lg:pb-2 → web untouched */}
-            <div className="hidden md:flex md:justify-center md:gap-6 lg:gap-10 md:pb-4 lg:pb-2">
-              {categories.map((cat) => (
-                <button
-                  key={cat.label}
-                  type="button"
-                  onClick={() => scrollTo(cat.href)}
-                  className="flex flex-col items-center justify-end gap-2 hover:scale-105 transition"
-                >
-                  <img
-                    src={cat.img}
-                    alt={cat.label}
-                    className="w-12 h-12 md:w-14 md:h-14 lg:w-16 lg:h-16 object-contain drop-shadow-md"
-                  />
-                  <span className="text-xs md:text-sm text-center leading-tight font-medium drop-shadow">
-                    {cat.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-
           </div>
+        </div>
 
+        {/* TABLET */}
+        <div className="relative container hidden md:block lg:hidden pt-10 pb-6">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.6 }}
+            className="flex justify-center mt-1 mb-2"
+          >
+            <img src={logo} alt="Echo Treats" className="h-14 object-contain" />
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.1 }}
+            className="text-center max-w-3xl mx-auto"
+          >
+            <p className="text-sm tracking-widest text-muted-foreground mb-2">
+              WELCOME TO ECHOTREATS
+            </p>
+
+            <h1 className="text-5xl font-semibold leading-tight mb-3">
+              Deliciously Made
+              <br />
+              <span className="italic text-primary">Bakery</span> Treats
+            </h1>
+
+            <p className="text-base text-muted-foreground mb-5">
+              Artisan & custom, made-to-order
+              <br />
+              From our kitchen to your celebrations
+            </p>
+
+            {renderButtons("text-base")}
+          </motion.div>
+
+          {renderSearch("mt-5", "max-w-lg")}
+
+          <div className="mt-6 max-w-5xl mx-auto">
+            <div className="grid grid-cols-8 gap-x-4 items-start">
+              {categories.map((cat) => renderIconItem(cat, "w-11 h-11", "text-sm"))}
+            </div>
+          </div>
+        </div>
+
+        {/* DESKTOP */}
+        <div className="relative container hidden lg:block pt-8 pb-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.6 }}
+            className="flex justify-center mt-0 mb-1"
+          >
+            <img src={logo} alt="Echo Treats" className="h-14 object-contain" />
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.1 }}
+            className="text-center max-w-2xl mx-auto"
+          >
+            <p className="text-sm tracking-widest text-muted-foreground mb-2">
+              WELCOME TO ECHOTREATS
+            </p>
+
+            <h1 className="text-6xl font-semibold leading-[0.95] mb-2">
+              Deliciously Made
+              <br />
+              <span className="italic text-primary">Bakery</span> Treats
+            </h1>
+
+            <p className="text-muted-foreground mb-4">
+              Artisan & custom, made-to-order
+              <br />
+              From our kitchen to your celebrations
+            </p>
+
+            {renderButtons()}
+          </motion.div>
+
+          {renderSearch("mt-4", "max-w-md")}
+
+          <div className="mt-6">
+            <div className="flex justify-center gap-8 flex-wrap">
+              {categories.map((cat) => renderIconItem(cat, "w-12 h-12", "text-sm"))}
+            </div>
+          </div>
         </div>
       </section>
 
       <ProductDetailModal
         product={selectedProduct}
         open={!!selectedProduct}
-        onOpenChange={(open) => { if (!open) setSelectedProduct(null); }}
+        onOpenChange={(open) => {
+          if (!open) setSelectedProduct(null);
+        }}
       />
     </>
   );
