@@ -38,7 +38,7 @@ const CustomOrderSection = () => {
   const [loading, setLoading] = useState(false);
   const [submitChannel, setSubmitChannel] = useState<"email" | "whatsapp">("email");
   const [form, setForm] = useState({
-    name: "", email: "", phone: "", occasion: "", product_type: "",
+    first_name: "", last_name: "", email: "", phone: "", occasion: "", product_type: "",
     flavor: "", size_quantity: "", delivery_date: "", message: "", allergy_note: "",
     address: "", pincode: "",
   });
@@ -46,12 +46,18 @@ const CustomOrderSection = () => {
   // Prefill form with logged-in user details
   useEffect(() => {
     if (!user) return;
-    setForm(prev => ({ ...prev, email: user.email || "" }));
+    const metaFirst = (user.user_metadata?.first_name as string | undefined) || "";
+    const metaLast = (user.user_metadata?.last_name as string | undefined) || "";
+    setForm(prev => ({ ...prev, email: user.email || "", first_name: metaFirst, last_name: metaLast }));
     supabase.from("profiles").select("full_name, phone").eq("user_id", user.id).maybeSingle().then(({ data }) => {
       if (data) {
+        const parts = (data.full_name || "").trim().split(" ");
+        const dbFirst = parts[0] || "";
+        const dbLast = parts.slice(1).join(" ") || "";
         setForm(prev => ({
           ...prev,
-          name: prev.name || data.full_name || "",
+          first_name: prev.first_name || dbFirst,
+          last_name: prev.last_name || dbLast,
           phone: prev.phone || data.phone || "",
         }));
       }
@@ -103,7 +109,7 @@ const CustomOrderSection = () => {
     return [
       `Custom Order Request`,
       ``,
-      `Name: ${form.name}`,
+      `Name: ${form.first_name} ${form.last_name}`.trim(),
       `Email: ${form.email}`,
       `Phone: ${form.phone}`,
       `Product Type: ${form.product_type}`,
@@ -122,7 +128,7 @@ const CustomOrderSection = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.email || !form.phone || !form.product_type || !form.address) {
+    if (!form.first_name || !form.email || !form.phone || !form.product_type || !form.address) {
       toast.error("Please fill in all required fields");
       return;
     }
@@ -131,7 +137,7 @@ const CustomOrderSection = () => {
     const imageUrl = await uploadImage();
 
     const submissionData: any = {
-      name: form.name,
+      name: `${form.first_name} ${form.last_name}`.trim(),
       email: form.email,
       phone: form.phone,
       occasion: form.occasion || null,
@@ -160,7 +166,7 @@ const CustomOrderSection = () => {
     setLoading(false);
 
     if (submitChannel === "email") {
-      const subject = encodeURIComponent(`New Custom Order from ${form.name}`);
+      const subject = encodeURIComponent(`New Custom Order from ${form.first_name} ${form.last_name}`.trim());
       const mailtoBody = encodeURIComponent(orderSummary);
       window.open(`mailto:echotreats.v@gmail.com?subject=${subject}&body=${mailtoBody}`, "_self");
       toast.success("Your email app will open with the order details.");
@@ -171,7 +177,7 @@ const CustomOrderSection = () => {
     }
 
     setForm({
-      name: "", email: "", phone: "", occasion: "", product_type: "",
+      first_name: "", last_name: "", email: "", phone: "", occasion: "", product_type: "",
       flavor: "", size_quantity: "", delivery_date: "", message: "", allergy_note: "",
       address: "", pincode: "",
     });
@@ -199,21 +205,24 @@ const CustomOrderSection = () => {
             <h3 className="font-heading text-xl font-semibold text-foreground mb-6">Request a Custom Quote</h3>
             <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <input type="text" placeholder="Name *" value={form.name} onChange={e => update("name", e.target.value)} className={inputCls} required />
-                <input type="email" placeholder="Email *" value={form.email} onChange={e => update("email", e.target.value)} className={inputCls} required />
+                <input type="text" placeholder="First Name *" value={form.first_name} onChange={e => update("first_name", e.target.value)} className={inputCls} required />
+                <input type="text" placeholder="Last Name" value={form.last_name} onChange={e => update("last_name", e.target.value)} className={inputCls} />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <input type="email" placeholder="Email *" value={form.email} onChange={e => update("email", e.target.value)} className={inputCls} required />
                 <input type="tel" placeholder="Phone *" value={form.phone} onChange={e => update("phone", e.target.value)} className={inputCls} required />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <select value={form.occasion} onChange={e => update("occasion", e.target.value)} className={inputCls}>
                   <option value="">Occasion</option>
                   <option>Birthday</option><option>Anniversary</option><option>Wedding</option><option>Baby Shower</option><option>Corporate</option><option>Festival</option><option>Other</option>
                 </select>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <select value={form.product_type} onChange={e => update("product_type", e.target.value)} className={inputCls} required>
                   <option value="">Product Type *</option>
                   <option>Cake</option><option>Cupcakes</option><option>Cookies</option><option>Chocolates</option><option>Dessert Box</option><option>Hamper</option>
                 </select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <input type="text" placeholder="Flavor Preference" value={form.flavor} onChange={e => update("flavor", e.target.value)} className={inputCls} />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -43,6 +43,17 @@ const HeroSection = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
 
+  const firstName = user
+    ? (user.user_metadata?.first_name as string | undefined) ||
+      (user.user_metadata?.full_name as string | undefined)?.split(" ")[0] ||
+      user.email?.split("@")[0] ||
+      "there"
+    : null;
+
+  const welcomeText = firstName
+    ? `HI ${firstName.toUpperCase()}, WELCOME TO ECHOTREATS`
+    : "WELCOME TO ECHOTREATS";
+
   const scrollTo = (href: string) => {
     const el = document.querySelector(href);
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -204,7 +215,7 @@ const HeroSection = () => {
             className="text-center max-w-2xl mx-auto"
           >
             <p className="text-xs tracking-widest text-muted-foreground mb-2">
-              WELCOME TO ECHOTREATS
+              {welcomeText}
             </p>
 
             <h1 className="text-4xl font-semibold leading-tight mb-3">
@@ -224,7 +235,7 @@ const HeroSection = () => {
 
           {renderSearch("mt-6", "max-w-md")}
 
-          <div className="mt-10">
+          <div className="mt-6">
             <div className="grid grid-cols-4 gap-x-3 gap-y-5">
               {categories.map((cat) => renderIconItem(cat, "w-10 h-10", "text-xs"))}
             </div>
@@ -249,7 +260,7 @@ const HeroSection = () => {
             className="text-center max-w-3xl mx-auto"
           >
             <p className="text-sm tracking-widest text-muted-foreground mb-2">
-              WELCOME TO ECHOTREATS
+              {welcomeText}
             </p>
 
             <h1 className="text-5xl font-semibold leading-tight mb-3">
@@ -269,9 +280,17 @@ const HeroSection = () => {
 
           {renderSearch("mt-5", "max-w-lg")}
 
-          <div className="mt-6 max-w-5xl mx-auto">
-            <div className="grid grid-cols-8 gap-x-4 items-start">
-              {categories.map((cat) => renderIconItem(cat, "w-11 h-11", "text-sm"))}
+          <div className="mt-10 max-w-5xl mx-auto">
+            <div className="grid grid-cols-5 gap-x-4 items-start">
+              {categories.slice(0, 5).map((cat) =>
+                renderIconItem(cat, "w-11 h-11", "text-sm")
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-x-6 items-start max-w-3xl mx-auto mt-6">
+              {categories.slice(5, 8).map((cat) =>
+                renderIconItem(cat, "w-11 h-11", "text-sm")
+              )}
             </div>
           </div>
         </div>
@@ -294,7 +313,7 @@ const HeroSection = () => {
             className="text-center max-w-2xl mx-auto"
           >
             <p className="text-sm tracking-widest text-muted-foreground mb-2">
-              WELCOME TO ECHOTREATS
+              {welcomeText}
             </p>
 
             <h1 className="text-6xl font-semibold leading-[0.95] mb-2">

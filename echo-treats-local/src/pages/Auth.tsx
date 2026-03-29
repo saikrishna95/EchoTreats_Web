@@ -9,7 +9,8 @@ const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -39,7 +40,7 @@ const Auth = () => {
         return;
       }
 
-      const { error } = await signUp(email, password, fullName, phone);
+      const { error } = await signUp(email, password, firstName, lastName, phone);
       if (error) setError(error.message);
       else setSuccess("Account created! You can now sign in.");
     }
@@ -70,9 +71,17 @@ const Auth = () => {
             <>
               <input
                 type="text"
-                placeholder="Full Name *"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
+                placeholder="First Name *"
+                value={firstName}
+                onChange={(e) => setFirstName(e.target.value)}
+                required
+                className={inputCls}
+              />
+              <input
+                type="text"
+                placeholder="Last Name *"
+                value={lastName}
+                onChange={(e) => setLastName(e.target.value)}
                 required
                 className={inputCls}
               />
