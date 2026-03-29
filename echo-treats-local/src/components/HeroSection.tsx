@@ -81,23 +81,23 @@ const HeroSection = () => {
           <div className="absolute inset-0 bg-gradient-to-b from-blush/80 via-background/60 to-background" />
         </div>
 
-        <div className="relative container flex flex-col min-h-screen justify-between
-          pt-4 pb-6
-          md:pt-6 md:pb-8
-          lg:pt-8 lg:pb-8
-          gap-3 md:gap-4 lg:gap-0">
+        <div className="relative container flex flex-col md:min-h-screen md:justify-between
+          pt-12 pb-6
+          md:pt-2 md:pb-4
+          lg:pt-7 lg:pb-8
+          gap-5 md:gap-0 lg:gap-0">
 
           {/* Logo — tight to top on all devices */}
           <motion.div
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.6 }}
-            className="flex justify-center pt-1 md:pt-2 lg:pt-3"
+            className="flex justify-center pt-0 md:pt-0 lg:pt-2"
           >
             <img
               src={logo}
               alt="Echo Treats"
-              className="h-12 md:h-16 lg:h-20 object-contain drop-shadow-md"
+              className="h-12 md:h-14 lg:h-20 object-contain drop-shadow-md"
             />
           </motion.div>
 
@@ -108,23 +108,23 @@ const HeroSection = () => {
             transition={{ duration: 0.7, delay: 0.1 }}
             className="flex flex-col items-center text-center max-w-2xl mx-auto w-full"
           >
-            <p className="text-xs md:text-sm tracking-widest text-muted-foreground mb-1 md:mb-2">
+            <p className="text-xs md:text-sm tracking-widest text-muted-foreground mb-1 md:mb-1">
               WELCOME TO ECHOTREATS
             </p>
 
-            <h1 className="text-3xl md:text-5xl lg:text-6xl font-semibold leading-tight mb-2 md:mb-3">
+            <h1 className="text-3xl md:text-5xl lg:text-6xl font-semibold leading-tight mb-2 md:mb-2">
               Deliciously Made
               <br />
               <span className="italic text-primary">Bakery</span> Treats
             </h1>
 
-            <p className="text-muted-foreground text-sm md:text-base mb-3 md:mb-4">
+            <p className="text-muted-foreground text-sm md:text-base mb-3 md:mb-2">
               Artisan & custom, made-to-order
               <br />
               From our kitchen to your celebrations
             </p>
 
-            <div className="flex justify-center gap-3 flex-wrap mb-3 md:mb-4">
+            <div className="flex justify-center gap-3 flex-wrap mb-3 md:mb-2">
               <button
                 type="button"
                 onClick={() => scrollTo("#products")}
@@ -142,7 +142,7 @@ const HeroSection = () => {
             </div>
 
             {/* Search */}
-            <div className="w-full max-w-md relative">
+            <div className="w-full max-w-md relative mb-0 md:mb-6 lg:mb-8">
               <div className="w-full flex items-center rounded-full border bg-white/80 backdrop-blur shadow-md px-4 py-2.5 gap-2">
                 <Search className="w-4 h-4 text-foreground/50 shrink-0" />
                 <input
@@ -183,7 +183,7 @@ const HeroSection = () => {
           </motion.div>
 
           {/* Category buttons */}
-          <div className="mt-2 md:mt-4 lg:mt-0">
+          <div className="mt-2 md:mt-1 lg:mt-0">
             {/* Mobile: 4×2 grid */}
             <div className="grid grid-cols-4 gap-x-2 gap-y-3 md:hidden">
               {categories.map((cat) => (
@@ -206,7 +206,7 @@ const HeroSection = () => {
             </div>
 
             {/* Tablet + Desktop: single row */}
-            <div className="hidden md:flex md:justify-center md:gap-6 lg:gap-10 pb-2">
+            <div className="hidden md:flex md:justify-center md:gap-6 lg:gap-10 pb-2 md:pb-4">
               {categories.map((cat) => (
                 <button
                   key={cat.label}
