@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
+import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import logo from "@/assets/logo.png";
 
@@ -15,6 +16,7 @@ const Auth = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const { signIn, signUp, user } = useAuth();
   const navigate = useNavigate();
 
@@ -42,7 +44,7 @@ const Auth = () => {
 
       const { error } = await signUp(email, password, firstName, lastName, phone);
       if (error) setError(error.message);
-      else setSuccess("Account created! You can now sign in.");
+      else setSuccess("Account created! Please check your email inbox and click the confirmation link to verify your account before signing in.");
     }
     setLoading(false);
   };
@@ -106,18 +108,33 @@ const Auth = () => {
             required
             className={inputCls}
           />
-          <input
-            type="password"
-            placeholder="Password * (min 6 characters)"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            minLength={6}
-            className={inputCls}
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              placeholder="Password * (min 6 characters)"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              minLength={6}
+              className={`${inputCls} pr-11`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(v => !v)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
 
           {error && <p className="text-sm text-destructive font-body">{error}</p>}
-          {success && <p className="text-sm text-green-600 font-body">{success}</p>}
+          {success && (
+            <div className="rounded-xl bg-green-50 border border-green-200 p-4">
+              <p className="text-sm font-semibold text-green-700 font-body mb-1">✅ Account Created!</p>
+              <p className="text-sm text-green-600 font-body">{success}</p>
+            </div>
+          )}
 
           <button
             type="submit"

@@ -76,6 +76,11 @@ const Admin = () => {
   const [addingUser, setAddingUser] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
 
+  const [orderSort, setOrderSort] = useState<"newest" | "oldest" | "total-high" | "total-low">("newest");
+  const [customOrderFilter, setCustomOrderFilter] = useState("all");
+  const [customOrderSort, setCustomOrderSort] = useState<"newest" | "oldest">("newest");
+  const [productSort, setProductSort] = useState<"newest" | "oldest" | "name-az" | "price-low" | "price-high">("newest");
+
   // Announcements
   const [announcements, setAnnouncements] = useState<any[]>([]);
   const [announcementText, setAnnouncementText] = useState("");
@@ -271,6 +276,43 @@ const Admin = () => {
     await fetchAll();
   };
 
+  // ── Custom Order Status Update (creates order on accept) ──────
+  const updateCustomOrderStatus = async (co: CustomOrder, newStatus: string) => {
+    const { error } = await supabase.from("custom_orders").update({ status: newStatus }).eq("id", co.id);
+    if (error) { toast.error("Failed to update status"); return; }
+
+    if (newStatus === "accepted") {
+      // Check if an order for this custom order already exists (by notes marker)
+      const marker = `[Custom Order: ${co.id}]`;
+      const { data: existing } = await supabase.from("orders").select("id").ilike("notes", `%${co.id}%`).maybeSingle();
+      if (!existing) {
+        const orderPayload: any = {
+          guest_name: co.name,
+          guest_email: co.email,
+          guest_phone: co.phone,
+          total: 0,
+          status: "confirmed",
+          notes: [marker, co.message].filter(Boolean).join("\n"),
+          delivery_address: (co as any).address || null,
+          delivery_date: co.delivery_date || null,
+          user_id: co.user_id || null,
+        };
+        const { error: orderErr } = await supabase.from("orders").insert(orderPayload);
+        if (orderErr) {
+          toast.error("Status updated but failed to create order");
+        } else {
+          toast.success("Custom order accepted — order created in Orders tab");
+        }
+      } else {
+        toast.success("Status updated");
+      }
+    } else {
+      toast.success("Status updated");
+    }
+
+    await fetchAll();
+  };
+
   // ── Orders ────────────────────────────────────────────────────
   const updateOrderStatus = async (id: string, status: string) => {
     const { error } = await supabase.from("orders").update({ status }).eq("id", id);
@@ -361,6 +403,17 @@ const Admin = () => {
     const { error } = await supabase.from("user_roles").delete().eq("user_id", userId).eq("role", "user");
     if (error) { toast.error("Failed to unblock user"); return; }
     toast.success("User unblocked");
+    await fetchAll();
+  };
+
+  const deleteUser = async (userId: string, name: string) => {
+    if (!window.confirm(`Permanently delete user "${name}"? This cannot be undone.`)) return;
+    const { data, error } = await supabase.functions.invoke("delete-user", { body: { user_id: userId } });
+    if (error || (data as any)?.error) {
+      toast.error((data as any)?.error || error?.message || "Failed to delete user");
+      return;
+    }
+    toast.success("User deleted");
     await fetchAll();
   };
 
@@ -531,13 +584,22 @@ const Admin = () => {
   };
 
   // ── Filtered Orders ───────────────────────────────────────────
-  const filteredOrders = orders.filter(o => {
-    const matchStatus = orderFilter === "all" || o.status === orderFilter;
-    const name = o.guest_name || profiles.find(p => p.user_id === o.user_id)?.full_name || "";
-    const matchSearch = !orderSearch || name.toLowerCase().includes(orderSearch.toLowerCase()) ||
-      o.id.includes(orderSearch) || (o.guest_email || "").includes(orderSearch);
-    return matchStatus && matchSearch;
-  });
+  const filteredOrders = orders
+    .filter(o => {
+      const matchStatus = orderFilter === "all" || o.status === orderFilter;
+      const name = o.guest_name || profiles.find(p => p.user_id === o.user_id)?.full_name || "";
+      const matchSearch = !orderSearch || name.toLowerCase().includes(orderSearch.toLowerCase()) ||
+        o.id.includes(orderSearch) || (o.guest_email || "").includes(orderSearch);
+      return matchStatus && matchSearch;
+    })
+    .sort((a, b) => {
+      switch (orderSort) {
+        case "oldest": return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        case "total-high": return Number(b.total) - Number(a.total);
+        case "total-low": return Number(a.total) - Number(b.total);
+        default: return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+    });
 
   const inputCls = "w-full px-4 py-3 bg-secondary/50 border border-border rounded-xl font-body text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30";
 
@@ -668,16 +730,26 @@ const Admin = () => {
               </button>
             </div>
 
-            {/* Search + Category Filter */}
+            {/* Search + Category Filter + Sort */}
             <div className="space-y-3 mb-4">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input
-                  placeholder="Search products..."
-                  value={productSearch}
-                  onChange={e => setProductSearch(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                />
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    placeholder="Search products..."
+                    value={productSearch}
+                    onChange={e => setProductSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
+                <select value={productSort} onChange={e => setProductSort(e.target.value as any)}
+                  className="px-3 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none">
+                  <option value="newest">Newest First</option>
+                  <option value="oldest">Oldest First</option>
+                  <option value="name-az">Name A–Z</option>
+                  <option value="price-low">Price: Low–High</option>
+                  <option value="price-high">Price: High–Low</option>
+                </select>
               </div>
               <div className="flex gap-2 flex-wrap">
                 <button
@@ -798,6 +870,14 @@ const Admin = () => {
                 const matchCat = productCategoryFilter === "all" || p.category_id === productCategoryFilter;
                 const matchSearch = !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase());
                 return matchCat && matchSearch;
+              }).sort((a, b) => {
+                switch (productSort) {
+                  case "oldest": return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+                  case "name-az": return a.name.localeCompare(b.name);
+                  case "price-low": return Number(a.price) - Number(b.price);
+                  case "price-high": return Number(b.price) - Number(a.price);
+                  default: return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                }
               }).map(p => (
                 <div key={p.id} className="flex items-center gap-4 bg-card rounded-xl p-4 border border-border/50">
                   {p.image_url
@@ -842,6 +922,13 @@ const Admin = () => {
                 {["pending", "confirmed", "preparing", "ready", "delivered", "cancelled"].map(s => (
                   <option key={s} value={s}>{s}</option>
                 ))}
+              </select>
+              <select value={orderSort} onChange={e => setOrderSort(e.target.value as any)}
+                className="px-3 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none">
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+                <option value="total-high">Total: High–Low</option>
+                <option value="total-low">Total: Low–High</option>
               </select>
               <button type="button" onClick={exportOrdersCSV}
                 className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl font-body text-sm hover:bg-secondary">
@@ -953,9 +1040,38 @@ const Admin = () => {
         {/* ── CUSTOM ORDERS TAB ── */}
         {!dataLoading && tab === "custom" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
-            {customOrders.length === 0 ? (
+            {/* Filter + Sort */}
+            <div className="flex gap-2 flex-wrap">
+              <select value={customOrderFilter} onChange={e => setCustomOrderFilter(e.target.value)}
+                className="px-3 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none">
+                <option value="all">All Status</option>
+                {["pending", "reviewed", "quoted", "accepted", "rejected"].map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+              <select value={customOrderSort} onChange={e => setCustomOrderSort(e.target.value as any)}
+                className="px-3 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none">
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+              </select>
+              <p className="font-body text-xs text-muted-foreground self-center ml-1">
+                {customOrders.filter(co => customOrderFilter === "all" || co.status === customOrderFilter).length} requests
+              </p>
+            </div>
+
+            {customOrders
+              .filter(co => customOrderFilter === "all" || co.status === customOrderFilter)
+              .sort((a, b) => customOrderSort === "oldest"
+                ? new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              ).length === 0 ? (
               <p className="text-center py-12 font-body text-sm text-muted-foreground">No custom order requests</p>
-            ) : customOrders.map(co => (
+            ) : customOrders
+              .filter(co => customOrderFilter === "all" || co.status === customOrderFilter)
+              .sort((a, b) => customOrderSort === "oldest"
+                ? new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+              ).map(co => (
               <div key={co.id} className="bg-card rounded-xl p-5 border border-border/50">
                 <div className="flex justify-between items-start mb-3 gap-3">
                   <div>
@@ -963,7 +1079,7 @@ const Admin = () => {
                     <p className="font-body text-xs text-muted-foreground">{co.email} • {co.phone}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <select value={co.status} onChange={e => { supabase.from("custom_orders").update({ status: e.target.value }).eq("id", co.id).then(() => fetchAll()); }}
+                    <select value={co.status} onChange={e => updateCustomOrderStatus(co, e.target.value)}
                       className="px-3 py-1.5 bg-secondary/50 border border-border rounded-lg font-body text-xs">
                       {["pending", "reviewed", "quoted", "accepted", "rejected"].map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -1011,6 +1127,7 @@ const Admin = () => {
         )}
 
         {/* ── CATEGORIES TAB ── */}
+
         {!dataLoading && tab === "categories" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <div className="flex justify-between items-center mb-4">
@@ -1210,6 +1327,10 @@ const Admin = () => {
                             Unblock
                           </button>
                         )}
+                        <button type="button" onClick={() => deleteUser(p.user_id, p.full_name || p.user_id)}
+                          className="p-1.5 hover:bg-destructive/10 rounded-lg text-destructive transition-colors" title="Delete user permanently">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   );

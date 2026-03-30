@@ -19,10 +19,10 @@ serve(async (req) => {
   }
 
   try {
-    const { email, password, full_name, phone } = await req.json();
+    const { user_id } = await req.json();
 
-    if (!email || !password || !full_name) {
-      return json({ error: "email, password and full_name are required" });
+    if (!user_id) {
+      return json({ error: "user_id is required" });
     }
 
     // @ts-ignore Deno global
@@ -33,25 +33,16 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { full_name, phone },
-    });
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(user_id);
 
     if (error) {
       return json({ error: error.message });
     }
 
-    await supabaseAdmin.from("profiles").upsert({
-      user_id: data.user.id,
-      full_name,
-      phone: phone || null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "user_id" });
+    await supabaseAdmin.from("profiles").delete().eq("user_id", user_id);
+    await supabaseAdmin.from("user_roles").delete().eq("user_id", user_id);
 
-    return json({ user: data.user });
+    return json({ success: true });
 
   } catch (err) {
     return json({ error: String(err) });

@@ -37,6 +37,20 @@ const Profile = () => {
   const { wishlistItems, loading: wishlistLoading, toggleWishlist } = useWishlist();
   const { addToCart } = useCart();
 
+  const canCancel = (order: Order) => {
+    const nonCancellableStatuses = ["cancelled", "delivered"];
+    if (nonCancellableStatuses.includes(order.status)) return false;
+    const hoursSince = (Date.now() - new Date(order.created_at).getTime()) / 36e5;
+    return hoursSince <= 24;
+  };
+
+  const handleCancelOrder = async (orderId: string) => {
+    const { error } = await supabase.from("orders").update({ status: "cancelled" }).eq("id", orderId);
+    if (error) { toast.error("Failed to cancel order"); return; }
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: "cancelled" } : o));
+    toast.success("Order cancelled successfully");
+  };
+
   useEffect(() => {
     if (!user) {
       navigate("/auth");
@@ -410,6 +424,30 @@ const Profile = () => {
                           Status updated: {new Date(order.updated_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}
                         </span>
                       </div>
+
+                      {order.status !== "cancelled" && (
+                        <div className="mt-3 pt-3 border-t border-border/40">
+                          {canCancel(order) ? (
+                            <div className="flex items-center gap-3 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => handleCancelOrder(order.id)}
+                                className="flex items-center gap-1.5 px-3 py-1.5 bg-destructive/10 text-destructive rounded-lg font-body text-xs hover:bg-destructive/20 transition-colors"
+                              >
+                                <X className="w-3 h-3" /> Cancel Order
+                              </button>
+                              <p className="font-body text-[11px] text-muted-foreground">
+                                Orders can only be cancelled within 24 hours of placing.
+                              </p>
+                            </div>
+                          ) : (
+                            <p className="font-body text-xs text-muted-foreground">
+                              ⚠️ Cannot cancel — 24-hour window has passed.{" "}
+                              <a href="tel:+919000000000" className="text-primary underline">Contact us</a> for help.
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })
