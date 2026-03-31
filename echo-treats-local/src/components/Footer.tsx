@@ -9,7 +9,7 @@ const Footer = () => {
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
           {/* Brand */}
           <div className="bg-accent">
-            <img src={logo} alt="Echo Treats" className="h-44 w-auto object-contain mb-4" />
+            <img src={logo} alt="Echo Treats" className="h-44 w-auto mb-4 -ml-3" />
             <p className="font-body text-sm opacity-70 leading-relaxed">
               Artisan cloud bakery crafting delicious, made-to-order treats for every occasion.
             </p>
