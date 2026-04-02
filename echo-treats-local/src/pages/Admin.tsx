@@ -79,6 +79,7 @@ const Admin = () => {
   const [orderSort, setOrderSort] = useState<"newest" | "oldest" | "total-high" | "total-low">("newest");
   const [customOrderFilter, setCustomOrderFilter] = useState("all");
   const [customOrderSort, setCustomOrderSort] = useState<"newest" | "oldest">("newest");
+  const [customOrderSearch, setCustomOrderSearch] = useState("");
 
   const emptyOfflineOrder = {
     first_name: "", last_name: "", guest_email: "", guest_phone: "",
@@ -305,7 +306,7 @@ const Admin = () => {
           guest_email: co.email,
           guest_phone: co.phone,
           total: 0,
-          status: "confirmed",
+          status: "preparing",
           notes: [marker, co.message].filter(Boolean).join("\n"),
           delivery_address: (co as any).address || null,
           delivery_date: co.delivery_date || null,
@@ -677,8 +678,10 @@ const Admin = () => {
     .filter(o => {
       const matchStatus = orderFilter === "all" || o.status === orderFilter;
       const name = o.guest_name || profiles.find(p => p.user_id === o.user_id)?.full_name || "";
+      const phone = o.guest_phone || profiles.find(p => p.user_id === o.user_id)?.phone || "";
       const matchSearch = !orderSearch || name.toLowerCase().includes(orderSearch.toLowerCase()) ||
-        o.id.includes(orderSearch) || (o.guest_email || "").includes(orderSearch);
+        o.id.includes(orderSearch) || (o.guest_email || "").includes(orderSearch) ||
+        phone.includes(orderSearch);
       return matchStatus && matchSearch;
     })
     .sort((a, b) => {
@@ -1001,7 +1004,7 @@ const Admin = () => {
             <div className="flex flex-wrap gap-3 mb-4 items-center">
               <div className="relative flex-1 min-w-48">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <input placeholder="Search by name, email, order ID..." value={orderSearch}
+                <input placeholder="Search by name, email, phone, order ID..." value={orderSearch}
                   onChange={e => setOrderSearch(e.target.value)}
                   className="w-full pl-9 pr-4 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
               </div>
@@ -1141,8 +1144,14 @@ const Admin = () => {
         {/* ── CUSTOM ORDERS TAB ── */}
         {!dataLoading && tab === "custom" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
-            {/* Filter + Sort */}
-            <div className="flex gap-2 flex-wrap">
+            {/* Search + Filter + Sort + Export */}
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative flex-1 min-w-48">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input placeholder="Search by name, email or phone..."
+                  value={customOrderSearch} onChange={e => setCustomOrderSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+              </div>
               <select value={customOrderFilter} onChange={e => setCustomOrderFilter(e.target.value)}
                 className="px-3 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none">
                 <option value="all">All Status</option>
@@ -1155,24 +1164,32 @@ const Admin = () => {
                 <option value="newest">Newest First</option>
                 <option value="oldest">Oldest First</option>
               </select>
-              <p className="font-body text-xs text-muted-foreground self-center ml-1">
-                {customOrders.filter(co => customOrderFilter === "all" || co.status === customOrderFilter).length} requests
-              </p>
+              <button type="button" onClick={() => {
+                const rows = [["Name", "Email", "Phone", "Occasion", "Product Type", "Flavor", "Size", "Delivery Date", "Status", "Message"]];
+                customOrders.forEach(co => {
+                  rows.push([co.name || "—", co.email || "—", co.phone || "—", co.occasion || "—", co.product_type || "—", co.flavor || "—", co.size_quantity || "—", co.delivery_date || "—", co.status, (co.message || "").replace(/,/g, " ")]);
+                });
+                const csv = rows.map(r => r.join(",")).join("\n");
+                const blob = new Blob([csv], { type: "text/csv" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a"); a.href = url; a.download = "custom-orders.csv"; a.click();
+              }} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl font-body text-sm hover:bg-secondary">
+                <Download className="w-4 h-4" /> Export CSV
+              </button>
             </div>
 
-            {customOrders
-              .filter(co => customOrderFilter === "all" || co.status === customOrderFilter)
-              .sort((a, b) => customOrderSort === "oldest"
-                ? new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-              ).length === 0 ? (
-              <p className="text-center py-12 font-body text-sm text-muted-foreground">No custom order requests</p>
-            ) : customOrders
-              .filter(co => customOrderFilter === "all" || co.status === customOrderFilter)
-              .sort((a, b) => customOrderSort === "oldest"
-                ? new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-                : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-              ).map(co => (
+            {(() => {
+              const q = customOrderSearch.toLowerCase();
+              const filtered = customOrders
+                .filter(co => customOrderFilter === "all" || co.status === customOrderFilter)
+                .filter(co => !q || (co.name || "").toLowerCase().includes(q) || (co.email || "").toLowerCase().includes(q) || (co.phone || "").includes(q))
+                .sort((a, b) => customOrderSort === "oldest"
+                  ? new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+                  : new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+                );
+              return filtered.length === 0 ? (
+                <p className="text-center py-12 font-body text-sm text-muted-foreground">No custom order requests</p>
+              ) : filtered.map(co => (
               <div key={co.id} className="bg-card rounded-xl p-5 border border-border/50">
                 <div className="flex justify-between items-start mb-3 gap-3">
                   <div>
@@ -1223,7 +1240,8 @@ const Admin = () => {
                   );
                 })()}
               </div>
-            ))}
+            ));
+          })()}
           </motion.div>
         )}
 
