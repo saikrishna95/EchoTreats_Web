@@ -3,7 +3,7 @@ import storyImg from "@/assets/about_logo.jpg";
 
 const StorySection = () => {
   return (
-    <section id="story" className="py-16 md:py-20">
+    <section id="story" className="pt-16 md:pt-20 pb-4 md:pb-6">
       <div className="container">
         <div className="grid md:grid-cols-2 gap-10 items-center">
           <motion.div

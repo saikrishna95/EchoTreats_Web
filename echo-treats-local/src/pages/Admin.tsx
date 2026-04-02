@@ -79,6 +79,20 @@ const Admin = () => {
   const [orderSort, setOrderSort] = useState<"newest" | "oldest" | "total-high" | "total-low">("newest");
   const [customOrderFilter, setCustomOrderFilter] = useState("all");
   const [customOrderSort, setCustomOrderSort] = useState<"newest" | "oldest">("newest");
+
+  const emptyOfflineOrder = {
+    first_name: "", last_name: "", guest_email: "", guest_phone: "",
+    occasion: "", product_type: "", flavor: "", size_quantity: "",
+    status: "confirmed", delivery_date: "", delivery_address: "", pincode: "",
+    cake_message: "", special_request: "", food_allergy: "",
+  };
+  const [showAddOrder, setShowAddOrder] = useState(false);
+  const [offlineOrderForm, setOfflineOrderForm] = useState(emptyOfflineOrder);
+  const [offlineOrderItems, setOfflineOrderItems] = useState([{ name: "", quantity: "1", unit_price: "" }]);
+  const [savingOfflineOrder, setSavingOfflineOrder] = useState(false);
+  const [offlineOrderImageFile, setOfflineOrderImageFile] = useState<File | null>(null);
+  const [offlineOrderImagePreview, setOfflineOrderImagePreview] = useState<string | null>(null);
+  const offlineOrderImageRef = useRef<HTMLInputElement>(null);
   const [productSort, setProductSort] = useState<"newest" | "oldest" | "name-az" | "price-low" | "price-high">("newest");
 
   // Announcements
@@ -326,6 +340,81 @@ const Admin = () => {
     const { error } = await supabase.from("orders").delete().eq("id", id);
     if (error) { toast.error("Failed to delete order"); return; }
     toast.success("Order deleted");
+    await fetchAll();
+  };
+
+  const resetOfflineOrderForm = () => {
+    setOfflineOrderForm(emptyOfflineOrder);
+    setOfflineOrderItems([{ name: "", quantity: "1", unit_price: "" }]);
+    setOfflineOrderImageFile(null);
+    setOfflineOrderImagePreview(null);
+    setShowAddOrder(false);
+  };
+
+  const saveOfflineOrder = async () => {
+    const guestName = `${offlineOrderForm.first_name.trim()} ${offlineOrderForm.last_name.trim()}`.trim();
+    if (!guestName) { toast.error("Customer name is required"); return; }
+    const validItems = offlineOrderItems.filter(i => i.name.trim() && i.unit_price);
+    if (validItems.length === 0) { toast.error("Add at least one item with name and price"); return; }
+
+    setSavingOfflineOrder(true);
+
+    // Upload reference image if provided
+    let refImageUrl = "";
+    if (offlineOrderImageFile) {
+      const ext = offlineOrderImageFile.name.split(".").pop();
+      const fileName = `offline-orders/${Date.now()}.${ext}`;
+      const { error: upErr } = await supabase.storage.from("product-images").upload(fileName, offlineOrderImageFile, { upsert: true });
+      if (!upErr) {
+        const { data: urlData } = supabase.storage.from("product-images").getPublicUrl(fileName);
+        refImageUrl = urlData.publicUrl;
+      }
+    }
+
+    const detailLines = [
+      "[Offline Order]",
+      offlineOrderForm.occasion && `Occasion: ${offlineOrderForm.occasion}`,
+      offlineOrderForm.product_type && `Product Type: ${offlineOrderForm.product_type}`,
+      offlineOrderForm.flavor && `Flavor: ${offlineOrderForm.flavor}`,
+      offlineOrderForm.size_quantity && `Size/Qty: ${offlineOrderForm.size_quantity}`,
+      offlineOrderForm.pincode && `Pincode: ${offlineOrderForm.pincode}`,
+      offlineOrderForm.cake_message && `Cake Message: ${offlineOrderForm.cake_message}`,
+      offlineOrderForm.special_request && `Special Request: ${offlineOrderForm.special_request}`,
+      offlineOrderForm.food_allergy && `Food Allergy: ${offlineOrderForm.food_allergy}`,
+      refImageUrl && `[Reference Image] ${refImageUrl}`,
+    ].filter(Boolean).join("\n");
+
+    const total = validItems.reduce((sum, i) => sum + Number(i.unit_price) * Number(i.quantity || 1), 0);
+    const deliveryAddr = [offlineOrderForm.delivery_address.trim(), offlineOrderForm.pincode.trim()].filter(Boolean).join(", ");
+
+    const { data: orderData, error: orderErr } = await supabase.from("orders").insert({
+      guest_name: guestName,
+      guest_email: offlineOrderForm.guest_email.trim() || null,
+      guest_phone: offlineOrderForm.guest_phone.trim() || null,
+      status: offlineOrderForm.status,
+      delivery_date: offlineOrderForm.delivery_date || null,
+      delivery_address: deliveryAddr || null,
+      notes: detailLines,
+      total,
+    }).select().single();
+
+    if (orderErr || !orderData) {
+      toast.error("Failed to create order");
+      setSavingOfflineOrder(false);
+      return;
+    }
+
+    const itemRows = validItems.map(i => ({
+      order_id: orderData.id,
+      product_name: i.name.trim(),
+      quantity: Number(i.quantity) || 1,
+      unit_price: Number(i.unit_price),
+    }));
+    await supabase.from("order_items").insert(itemRows);
+
+    toast.success("Offline order added successfully");
+    resetOfflineOrderForm();
+    setSavingOfflineOrder(false);
     await fetchAll();
   };
 
@@ -934,7 +1023,13 @@ const Admin = () => {
                 className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl font-body text-sm hover:bg-secondary">
                 <Download className="w-4 h-4" /> Export CSV
               </button>
+              <button type="button" onClick={() => setShowAddOrder(v => !v)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-body text-sm hover:opacity-90">
+                <Plus className="w-4 h-4" /> Add Order
+              </button>
             </div>
+
+{/* inline form removed – modal rendered at root */}
 
             <p className="font-body text-xs text-muted-foreground mb-3">{filteredOrders.length} orders</p>
 
@@ -948,17 +1043,23 @@ const Admin = () => {
                 const customerPhone = o.guest_phone || profile?.phone || "—";
                 const items = orderItems[o.id] || [];
                 const isExpanded = expandedOrder === o.id;
+                const isOffline = (o.notes || "").includes("[Offline Order]");
 
                 return (
                   <div key={o.id} className="bg-card rounded-xl border border-border/50 overflow-hidden">
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
                             <p className="font-body text-xs font-mono text-muted-foreground">#{o.id.slice(0, 8).toUpperCase()}</p>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-body font-medium ${STATUS_COLORS[o.status] || "bg-secondary text-foreground"}`}>
                               {o.status}
                             </span>
+                            {isOffline && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-body font-medium bg-slate-100 text-slate-600">
+                                Offline
+                              </span>
+                            )}
                           </div>
                           {items.length > 0 && (
                             <p className="font-body text-sm font-semibold text-foreground mb-1">
@@ -1751,6 +1852,269 @@ const Admin = () => {
             className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl"
             onClick={e => e.stopPropagation()}
           />
+        </motion.div>
+      )}
+    </AnimatePresence>
+
+    {/* ── Add Offline / Walk-in Order Modal ── */}
+    <AnimatePresence>
+      {showAddOrder && (
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm p-4 overflow-y-auto"
+          onClick={resetOfflineOrderForm}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 24, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 16, scale: 0.97 }}
+            transition={{ duration: 0.22 }}
+            className="relative bg-card rounded-2xl shadow-2xl border border-border/50 w-full max-w-2xl my-6 overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between px-6 pt-6 pb-4 border-b border-border/50">
+              <div>
+                <h3 className="font-heading text-lg font-semibold text-foreground">Add Offline / Walk-in Order</h3>
+                <p className="font-body text-xs text-muted-foreground mt-0.5">Manually record orders placed in person or via phone.</p>
+              </div>
+              <button type="button" onClick={resetOfflineOrderForm} className="p-2 rounded-lg hover:bg-secondary -mt-1 -mr-1">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-6 max-h-[80vh] overflow-y-auto">
+
+              {/* ── Customer Details ── */}
+              <div>
+                <p className="font-body text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">Customer Details</p>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">First Name *</p>
+                    <input placeholder="First name" value={offlineOrderForm.first_name}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, first_name: e.target.value }))}
+                      className={inputCls} />
+                  </div>
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Last Name</p>
+                    <input placeholder="Last name" value={offlineOrderForm.last_name}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, last_name: e.target.value }))}
+                      className={inputCls} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Email</p>
+                    <input placeholder="customer@email.com" value={offlineOrderForm.guest_email}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, guest_email: e.target.value }))}
+                      className={inputCls} />
+                  </div>
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Phone</p>
+                    <input placeholder="+91 98000 00000" value={offlineOrderForm.guest_phone}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, guest_phone: e.target.value }))}
+                      className={inputCls} />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Order Info ── */}
+              <div>
+                <p className="font-body text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">Order Info</p>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Occasion</p>
+                    <select value={offlineOrderForm.occasion}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, occasion: e.target.value }))}
+                      className={inputCls}>
+                      <option value="">Select occasion</option>
+                      {["Birthday", "Anniversary", "Festive", "Wedding", "Baby Shower", "Corporate", "Celebration", "Other"].map(o => (
+                        <option key={o} value={o}>{o}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Product Type</p>
+                    <select value={offlineOrderForm.product_type}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, product_type: e.target.value }))}
+                      className={inputCls}>
+                      <option value="">Select type</option>
+                      {["Cake", "Cupcake", "Brownie", "Cookie", "Cheesecake", "Chocolate", "Tub Dessert", "Custom"].map(t => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Flavor Preference</p>
+                    <input placeholder="e.g. Chocolate, Vanilla, Red Velvet" value={offlineOrderForm.flavor}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, flavor: e.target.value }))}
+                      className={inputCls} />
+                  </div>
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Size / Quantity</p>
+                    <input placeholder="e.g. 1kg, 12 pieces" value={offlineOrderForm.size_quantity}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, size_quantity: e.target.value }))}
+                      className={inputCls} />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Items & Pricing ── */}
+              <div>
+                <p className="font-body text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">Items & Pricing *</p>
+                <div className="space-y-2">
+                  {offlineOrderItems.map((item, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <input placeholder="Item name (e.g. Chocolate Cake)" value={item.name}
+                        onChange={e => setOfflineOrderItems(prev => prev.map((it, i) => i === idx ? { ...it, name: e.target.value } : it))}
+                        className={`${inputCls} flex-[3]`} />
+                      <input placeholder="Qty" type="number" min="1" value={item.quantity}
+                        onChange={e => setOfflineOrderItems(prev => prev.map((it, i) => i === idx ? { ...it, quantity: e.target.value } : it))}
+                        className="w-16 px-3 py-3 bg-secondary/50 border border-border rounded-xl font-body text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 flex-none" />
+                      <input placeholder="₹ Price" type="number" min="0" value={item.unit_price}
+                        onChange={e => setOfflineOrderItems(prev => prev.map((it, i) => i === idx ? { ...it, unit_price: e.target.value } : it))}
+                        className={`${inputCls} flex-1`} />
+                      {offlineOrderItems.length > 1 && (
+                        <button type="button" onClick={() => setOfflineOrderItems(prev => prev.filter((_, i) => i !== idx))}
+                          className="p-2 text-destructive hover:bg-destructive/10 rounded-lg shrink-0">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between">
+                    <button type="button"
+                      onClick={() => setOfflineOrderItems(prev => [...prev, { name: "", quantity: "1", unit_price: "" }])}
+                      className="flex items-center gap-1.5 font-body text-xs text-primary hover:underline">
+                      <Plus className="w-3.5 h-3.5" /> Add another item
+                    </button>
+                    {offlineOrderItems.some(i => i.unit_price) && (
+                      <p className="font-body text-sm font-semibold text-foreground">
+                        Total: ₹{offlineOrderItems.reduce((s, i) => s + (Number(i.unit_price) || 0) * (Number(i.quantity) || 1), 0).toLocaleString("en-IN")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Delivery ── */}
+              <div>
+                <p className="font-body text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">Delivery</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <p className="font-body text-xs text-muted-foreground mb-1">Delivery Address</p>
+                    <input placeholder="Full address" value={offlineOrderForm.delivery_address}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, delivery_address: e.target.value }))}
+                      className={inputCls} />
+                  </div>
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Pincode</p>
+                    <input placeholder="500001" value={offlineOrderForm.pincode}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, pincode: e.target.value }))}
+                      className={inputCls} />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Delivery Date</p>
+                    <input type="date" value={offlineOrderForm.delivery_date}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, delivery_date: e.target.value }))}
+                      className={inputCls} />
+                  </div>
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Status</p>
+                    <select value={offlineOrderForm.status}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, status: e.target.value }))}
+                      className={inputCls}>
+                      {["pending", "confirmed", "preparing", "ready", "delivered"].map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Special Details ── */}
+              <div>
+                <p className="font-body text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">Special Details</p>
+                <div className="space-y-3">
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Message on Cake</p>
+                    <input placeholder="e.g. Happy Birthday Sarah!" value={offlineOrderForm.cake_message}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, cake_message: e.target.value }))}
+                      className={inputCls} />
+                  </div>
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Special Request</p>
+                    <textarea placeholder="Any special instructions, design preferences, etc." value={offlineOrderForm.special_request}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, special_request: e.target.value }))}
+                      rows={2} className={`${inputCls} resize-none`} />
+                  </div>
+                  <div>
+                    <p className="font-body text-xs text-muted-foreground mb-1">Food Allergies</p>
+                    <input placeholder="e.g. Nut-free, Gluten-free, Dairy-free" value={offlineOrderForm.food_allergy}
+                      onChange={e => setOfflineOrderForm(f => ({ ...f, food_allergy: e.target.value }))}
+                      className={inputCls} />
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Reference Image ── */}
+              <div>
+                <p className="font-body text-[11px] font-semibold text-muted-foreground uppercase tracking-widest mb-3">Reference / Sample Image</p>
+                <div
+                  className="flex items-center gap-4 p-4 border-2 border-dashed border-border rounded-xl cursor-pointer hover:border-primary transition-colors"
+                  onClick={() => offlineOrderImageRef.current?.click()}
+                >
+                  {offlineOrderImagePreview ? (
+                    <img src={offlineOrderImagePreview} alt="Preview" className="w-20 h-20 rounded-lg object-cover shrink-0" />
+                  ) : (
+                    <div className="w-20 h-20 rounded-lg bg-secondary/50 flex items-center justify-center shrink-0">
+                      <Upload className="w-6 h-6 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div>
+                    <p className="font-body text-sm text-foreground font-medium">
+                      {offlineOrderImageFile ? offlineOrderImageFile.name : "Upload reference image"}
+                    </p>
+                    <p className="font-body text-xs text-muted-foreground mt-0.5">JPG, PNG, WebP · Max 5MB</p>
+                    {offlineOrderImagePreview && (
+                      <button type="button" onClick={e => { e.stopPropagation(); setOfflineOrderImageFile(null); setOfflineOrderImagePreview(null); }}
+                        className="font-body text-xs text-destructive hover:underline mt-1">
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <input
+                  ref={offlineOrderImageRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 5 * 1024 * 1024) { toast.error("Image must be under 5MB"); return; }
+                    setOfflineOrderImageFile(file);
+                    setOfflineOrderImagePreview(URL.createObjectURL(file));
+                  }}
+                />
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border/50 bg-secondary/20">
+              <button type="button" onClick={resetOfflineOrderForm}
+                className="px-5 py-2 bg-secondary text-foreground rounded-lg font-body text-sm hover:bg-secondary/80">
+                Cancel
+              </button>
+              <button type="button" onClick={saveOfflineOrder} disabled={savingOfflineOrder}
+                className="px-5 py-2 bg-primary text-primary-foreground rounded-lg font-body text-sm hover:opacity-90 disabled:opacity-60 flex items-center gap-2">
+                <Check className="w-4 h-4" /> {savingOfflineOrder ? "Saving..." : "Save Order"}
+              </button>
+            </div>
+          </motion.div>
         </motion.div>
       )}
     </AnimatePresence>

@@ -11,6 +11,7 @@ import CustomOrderSection from "@/components/CustomOrderSection";
 import ReviewsSection from "@/components/ReviewsSection";
 import InstagramSection from "@/components/InstagramSection";
 import StorySection from "@/components/StorySection";
+import SustainabilitySection from "@/components/SustainabilitySection";
 import Footer from "@/components/Footer";
 import CartDrawer from "@/components/CartDrawer";
 
@@ -172,6 +173,7 @@ const Index = () => {
         <ReviewsSection />
         <InstagramSection />
         <StorySection />
+        <SustainabilitySection />
       </main>
 
       <Footer />

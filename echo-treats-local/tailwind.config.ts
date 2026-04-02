@@ -22,6 +22,7 @@ export default {
       fontFamily: {
         heading: ["Playfair Display", "Georgia", "serif"],
         body: ["DM Sans", "system-ui", "sans-serif"],
+        script: ["Dancing Script", "cursive"],
       },
       colors: {
         border: "hsl(var(--border))",
