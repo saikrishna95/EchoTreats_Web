@@ -13,6 +13,7 @@ const CartDrawer = () => {
   const navigate = useNavigate();
   const [placing, setPlacing] = useState(false);
   const [orderNotes, setOrderNotes] = useState("");
+  const [orderSize, setOrderSize] = useState("");
 
   const handleCheckout = async () => {
     if (!user) {
@@ -23,7 +24,7 @@ const CartDrawer = () => {
     setPlacing(true);
     const { data: order, error } = await supabase
       .from("orders")
-      .insert({ user_id: user.id, total, status: "pending", notes: orderNotes.trim() || null })
+      .insert({ user_id: user.id, total, status: "pending", notes: orderNotes.trim() || null, size_preference: orderSize.trim() || null } as any)
       .select()
       .single();
 
@@ -44,6 +45,7 @@ const CartDrawer = () => {
     await supabase.from("order_items").insert(orderItems);
     await clearCart();
     setOrderNotes("");
+    setOrderSize("");
     setPlacing(false);
     setIsOpen(false);
     toast.success("Order placed successfully!");
@@ -114,6 +116,18 @@ const CartDrawer = () => {
 
             {items.length > 0 && (
               <div className="p-5 border-t border-border space-y-3">
+                <div>
+                  <label className="font-body text-xs font-medium text-foreground mb-1 block">
+                    Desired Size <span className="text-muted-foreground font-normal">(e.g. 1kg, 6 inch, 12 pcs)</span>
+                  </label>
+                  <input
+                    value={orderSize}
+                    onChange={(e) => setOrderSize(e.target.value)}
+                    placeholder="Enter your preferred size or quantity…"
+                    maxLength={100}
+                    className="w-full rounded-lg border border-border bg-secondary/30 px-3 py-2 font-body text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+                  />
+                </div>
                 <div>
                   <label className="font-body text-xs font-medium text-foreground mb-1 block">
                     Remarks / Allergy Note

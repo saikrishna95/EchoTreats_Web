@@ -78,6 +78,9 @@ const Admin = () => {
   const [addingUser, setAddingUser] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
 
+  const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
+  const [paymentInput, setPaymentInput] = useState("");
+
   const [orderSort, setOrderSort] = useState<"newest" | "oldest" | "total-high" | "total-low">("newest");
   const [customOrderFilter, setCustomOrderFilter] = useState("all");
   const [customOrderSort, setCustomOrderSort] = useState<"newest" | "oldest">("newest");
@@ -338,6 +341,28 @@ const Admin = () => {
     await fetchAll();
   };
 
+  const savePayment = async (orderId: string, amount: number) => {
+    const { error } = await (supabase.from("orders") as any).update({
+      payment_received: true,
+      payment_amount: amount,
+    }).eq("id", orderId);
+    if (error) { toast.error("Failed to save payment"); return; }
+    toast.success("Payment recorded");
+    setPaymentOrderId(null);
+    setPaymentInput("");
+    await fetchAll();
+  };
+
+  const clearPayment = async (orderId: string) => {
+    const { error } = await (supabase.from("orders") as any).update({
+      payment_received: false,
+      payment_amount: null,
+    }).eq("id", orderId);
+    if (error) { toast.error("Failed to update payment"); return; }
+    toast.success("Payment cleared");
+    await fetchAll();
+  };
+
   const deleteOrder = async (id: string) => {
     if (!window.confirm("Delete this order record?")) return;
     const { error } = await supabase.from("orders").delete().eq("id", id);
@@ -514,11 +539,12 @@ const Admin = () => {
   const activeOrders = orders.filter(o => ["pending", "confirmed", "preparing", "ready"].includes(o.status));
   const cancelledOrders = orders.filter(o => o.status === "cancelled");
 
-  // Actual revenue = delivered only
-  const actualRevenue = deliveredOrders.reduce((s, o) => s + Number(o.total), 0);
+  // Actual revenue = payment received only
+  const paidOrders = orders.filter(o => (o as any).payment_received);
+  const actualRevenue = paidOrders.reduce((s, o) => s + Number((o as any).payment_amount ?? o.total), 0);
   // Projected = pipeline orders (not yet delivered, not cancelled)
   const projectedRevenue = activeOrders.reduce((s, o) => s + Number(o.total), 0);
-  const avgOrderValue = deliveredOrders.length > 0 ? actualRevenue / deliveredOrders.length : 0;
+  const avgOrderValue = paidOrders.length > 0 ? actualRevenue / paidOrders.length : 0;
   const cancellationRate = orders.length > 0 ? (cancelledOrders.length / orders.length) * 100 : 0;
 
   const pendingOrders = orders.filter(o => o.status === "pending").length;
@@ -535,13 +561,13 @@ const Admin = () => {
     ? fulfillmentDays.reduce((s, d) => s + d, 0) / fulfillmentDays.length
     : 0;
 
-  // Monthly revenue (current month, actual delivered only)
+  // Monthly revenue (current month, payment received only)
   const now = new Date();
   const thisMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lastMonthStr = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, "0")}`;
-  const thisMonthRevenue = deliveredOrders.filter(o => o.created_at.startsWith(thisMonthStr)).reduce((s, o) => s + Number(o.total), 0);
-  const lastMonthRevenue = deliveredOrders.filter(o => o.created_at.startsWith(lastMonthStr)).reduce((s, o) => s + Number(o.total), 0);
+  const thisMonthRevenue = paidOrders.filter(o => o.created_at.startsWith(thisMonthStr)).reduce((s, o) => s + Number((o as any).payment_amount ?? o.total), 0);
+  const lastMonthRevenue = paidOrders.filter(o => o.created_at.startsWith(lastMonthStr)).reduce((s, o) => s + Number((o as any).payment_amount ?? o.total), 0);
   const monthGrowth = lastMonthRevenue > 0 ? ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100 : null;
 
   // Repeat customers (placed more than 1 order)
@@ -1087,9 +1113,58 @@ const Admin = () => {
                           {offlineSize && (
                             <p className="font-body text-xs text-muted-foreground mt-0.5">Size: {offlineSize}</p>
                           )}
+                          {items.length > 0 && (() => {
+                            const totalQty = items.reduce((s: number, i: any) => s + (Number(i.quantity) || 1), 0);
+                            return <p className="font-body text-xs text-muted-foreground mt-0.5">Qty: {totalQty}</p>;
+                          })()}
+                          {(o as any).size_preference && (
+                            <p className="font-body text-xs text-muted-foreground mt-0.5">Size: {(o as any).size_preference}</p>
+                          )}
                           <p className="font-body text-xs text-muted-foreground mt-0.5">
                             Ordered: {new Date(o.created_at).toLocaleString()} {o.delivery_date ? `• Delivery: ${o.delivery_date}` : ""}
                           </p>
+                          {o.status === "delivered" && (
+                            <div className="mt-2 pt-2 border-t border-border/30">
+                              {(o as any).payment_received ? (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-body text-xs text-green-600 font-medium">
+                                    ✓ Payment received — ₹{Number((o as any).payment_amount ?? o.total).toLocaleString()}
+                                  </span>
+                                  <button type="button" onClick={() => clearPayment(o.id)}
+                                    className="font-body text-[11px] text-muted-foreground underline hover:text-destructive">
+                                    Clear
+                                  </button>
+                                </div>
+                              ) : paymentOrderId === o.id ? (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-body text-xs text-muted-foreground">Amount received (₹):</span>
+                                  <input
+                                    type="number"
+                                    value={paymentInput}
+                                    onChange={e => setPaymentInput(e.target.value)}
+                                    placeholder={String(o.total)}
+                                    className="w-24 px-2 py-1 border border-border rounded-lg font-body text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
+                                    autoFocus
+                                  />
+                                  <button type="button"
+                                    onClick={() => savePayment(o.id, Number(paymentInput) || Number(o.total))}
+                                    className="px-3 py-1 bg-green-600 text-white rounded-lg font-body text-xs hover:opacity-90">
+                                    Save
+                                  </button>
+                                  <button type="button" onClick={() => setPaymentOrderId(null)}
+                                    className="font-body text-xs text-muted-foreground underline">
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button type="button"
+                                  onClick={() => { setPaymentOrderId(o.id); setPaymentInput(String(o.total)); }}
+                                  className="font-body text-xs text-amber-600 font-medium hover:underline">
+                                  ⚠ Payment not recorded — Mark received
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                         <div className="flex flex-col items-end gap-1.5 shrink-0">
                           <div className="flex items-center gap-2">
