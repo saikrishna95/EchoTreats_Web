@@ -1044,11 +1044,21 @@ const Admin = () => {
               ) : filteredOrders.map(o => {
                 const profile = profiles.find(p => p.user_id === o.user_id);
                 const customerName = o.guest_name || profile?.full_name || "Guest";
-                const customerEmail = o.guest_email || "—";
+                const customerEmail = o.guest_email || profile?.email || "—";
                 const customerPhone = o.guest_phone || profile?.phone || "—";
                 const items = orderItems[o.id] || [];
                 const isExpanded = expandedOrder === o.id;
                 const isOffline = (o.notes || "").includes("[Offline Order]");
+
+                // Parse offline order details from notes
+                const getNoteField = (key: string) => (o.notes || "").match(new RegExp(`${key}: (.+)`))?.[1]?.trim() || "";
+                const offlineSize = isOffline ? getNoteField("Size/Qty") : "";
+                const offlineProductType = isOffline ? getNoteField("Product Type") : "";
+
+                // Item label: DB items take priority, then notes Product Type
+                const itemLabel = items.length > 0
+                  ? items.map((i: any) => `${i.product_name}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`).join(", ")
+                  : offlineProductType;
 
                 return (
                   <div key={o.id} className="bg-card rounded-xl border border-border/50 overflow-hidden">
@@ -1066,16 +1076,17 @@ const Admin = () => {
                               </span>
                             )}
                           </div>
-                          {items.length > 0 && (
-                            <p className="font-body text-sm font-semibold text-foreground mb-1">
-                              {items.map((i: any) => `${i.product_name}${i.quantity > 1 ? ` ×${i.quantity}` : ""}`).join(", ")}
-                            </p>
+                          {itemLabel && (
+                            <p className="font-body text-sm font-semibold text-foreground mb-1">{itemLabel}</p>
                           )}
                           <p className="font-body text-sm text-foreground">{customerName}</p>
                           <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5">
                             <p className="font-body text-xs text-muted-foreground">{customerEmail}</p>
                             <p className="font-body text-xs text-muted-foreground">{customerPhone}</p>
                           </div>
+                          {offlineSize && (
+                            <p className="font-body text-xs text-muted-foreground mt-0.5">Size: {offlineSize}</p>
+                          )}
                           <p className="font-body text-xs text-muted-foreground mt-0.5">
                             Ordered: {new Date(o.created_at).toLocaleString()} {o.delivery_date ? `• Delivery: ${o.delivery_date}` : ""}
                           </p>

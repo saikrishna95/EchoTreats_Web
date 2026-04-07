@@ -61,7 +61,7 @@ const Index = () => {
     }
 
     if (routeSectionId) {
-      document.getElementById(routeSectionId)?.scrollIntoView({ behavior: "auto", block: "start" });
+      document.getElementById(routeSectionId)?.scrollIntoView({ behavior: "instant", block: "start" });
     }
 
     lastNavigatedSection.current = routeSectionId;
@@ -94,7 +94,7 @@ const Index = () => {
 
     const el = document.getElementById(sectionId);
     if (el) {
-      el.scrollIntoView({ behavior: "auto", block: "start" });
+      el.scrollIntoView({ behavior: "instant", block: "start" });
       lastNavigatedSection.current = sectionId;
     }
   }, [loading, routeSectionId]);

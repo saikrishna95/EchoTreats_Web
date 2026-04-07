@@ -25,7 +25,7 @@ const Category = () => {
   const [selectedProduct, setSelectedProduct] = useState<ProductRow | null>(null);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "auto" });
+    window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
 
   const category = categories.find((c) => c.slug === slug);
