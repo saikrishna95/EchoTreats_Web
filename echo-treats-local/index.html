@@ -19,6 +19,37 @@
     <meta property="og:type" content="website" />
 
     <meta name="twitter:card" content="summary_large_image" />
+    <style>
+      html[data-initial-route-hide="1"] body {
+        opacity: 0;
+      }
+    </style>
+    <script>
+      (function () {
+        var path = window.location.pathname.replace(/^\/+|\/+$/g, "");
+        var homeSectionPaths = {
+          products: true,
+          cakes: true,
+          brownies: true,
+          chocolates: true,
+          cupcakes: true,
+          tubs: true,
+          cheesecakes: true,
+          cookies: true,
+          new: true,
+          occasions: true,
+          custom: true,
+          reviews: true,
+          feed: true,
+          story: true,
+          contact: true
+        };
+
+        if (homeSectionPaths[path]) {
+          document.documentElement.setAttribute("data-initial-route-hide", "1");
+        }
+      })();
+    </script>
   </head>
 
   <body>

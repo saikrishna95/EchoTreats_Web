@@ -11,6 +11,7 @@ import CartDrawer from "@/components/CartDrawer";
 import Footer from "@/components/Footer";
 import { useEffect, useState } from "react";
 import type { Database } from "@/integrations/supabase/types";
+import { homeSectionPath } from "@/lib/homeSections";
 
 type ProductRow = Database["public"]["Tables"]["products"]["Row"];
 
@@ -48,11 +49,7 @@ const Category = () => {
         <div className="container py-8 md:py-12">
           <button
             type="button"
-            onClick={() =>
-              navigate("/", {
-                state: { scrollToSection: returnSection },
-              })
-            }
+            onClick={() => navigate(homeSectionPath(returnSection))}
             className="flex items-center gap-2 font-body text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />

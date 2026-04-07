@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { motion } from "framer-motion";
 import { User, Package, Heart, LogOut, ArrowLeft, Trash2, Pencil, Check, X } from "lucide-react";
 import SignOutModal from "@/components/SignOutModal";
@@ -15,17 +15,17 @@ type ProfileType = Database["public"]["Tables"]["profiles"]["Row"];
 type TabKey = "profile" | "orders" | "wishlist";
 
 const Profile = () => {
-  const { user, signOut, isAdmin } = useAuth();
+  const { user, signOut, isAdmin, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const { tab: tabParam } = useParams();
 
-  const initialTab = (location.state?.activeTab as TabKey) || "profile";
-  const wishlistOnly = Boolean(location.state?.wishlistOnly);
+  const activeTab = (tabParam as TabKey) || "profile";
+  const setActiveTab = (t: TabKey) => navigate(`/profile/${t}`, { replace: true });
 
   const [profile, setProfile] = useState<ProfileType | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [orderItems, setOrderItems] = useState<Record<string, any[]>>({});
-  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
 
   // Profile edit state
   const [editing, setEditing] = useState(false);
@@ -52,8 +52,12 @@ const Profile = () => {
   };
 
   useEffect(() => {
+    if (authLoading) {
+      return;
+    }
+
     if (!user) {
-      navigate("/auth");
+      navigate("/auth", { replace: true, state: { redirectTo: location.pathname } });
       return;
     }
 
@@ -89,13 +93,8 @@ const Profile = () => {
     };
 
     fetchData();
-  }, [user, navigate]);
+  }, [authLoading, location.pathname, user, navigate]);
 
-  useEffect(() => {
-    if (location.state?.activeTab) {
-      setActiveTab(location.state.activeTab as TabKey);
-    }
-  }, [location.state]);
 
   const handleSignOut = () => setShowSignOut(true);
 
@@ -206,40 +205,14 @@ const Profile = () => {
     );
   };
 
-  if (wishlistOnly) {
-    return (
-      <div className="min-h-screen bg-background">
-        <div className="container py-8 max-w-3xl">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="flex items-center gap-2 font-body text-sm text-muted-foreground hover:text-foreground mb-6"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Shop
-          </button>
-
-          <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}>
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h1 className="font-heading text-2xl font-semibold text-foreground">My Wishlist</h1>
-                <p className="font-body text-sm text-muted-foreground">
-                  {wishlistItems.length} item{wishlistItems.length !== 1 ? "s" : ""}
-                </p>
-              </div>
-            </div>
-
-            {renderWishlist()}
-          </motion.div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <>
     <div className="min-h-screen bg-background">
       <div className="container py-8 max-w-3xl">
+        {authLoading ? (
+          <div className="py-20 text-center font-body text-muted-foreground">Loading your account...</div>
+        ) : (
+          <>
         <button
           type="button"
           onClick={() => navigate("/")}
@@ -457,6 +430,8 @@ const Profile = () => {
 
           {activeTab === "wishlist" && renderWishlist()}
         </motion.div>
+          </>
+        )}
       </div>
     </div>
 

@@ -106,9 +106,7 @@ const Navbar = ({ onMenuOpen, isHomePage = false, heroVisible = false }: NavbarP
             type="button"
             aria-label="Open wishlist"
             onClick={() =>
-              navigate("/profile", {
-                state: { activeTab: "wishlist", wishlistOnly: true },
-              })
+              navigate("/profile/wishlist")
             }
             className={`p-2 relative rounded-lg transition-colors ${
               pastHero ? "hover:bg-secondary" : "hover:bg-white/20"

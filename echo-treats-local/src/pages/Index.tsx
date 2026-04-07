@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import AnnouncementBar from "@/components/AnnouncementBar";
 import Navbar from "@/components/Navbar";
 import SlideMenu from "@/components/SlideMenu";
@@ -18,6 +18,7 @@ import CartDrawer from "@/components/CartDrawer";
 import { useProducts } from "@/hooks/useProducts";
 import { mapDbProduct } from "@/lib/productMapper";
 import { supabase } from "@/integrations/supabase/client";
+import { getHomeSectionFromPathname, homeSectionIds, homeSectionPath } from "@/lib/homeSections";
 
 const Index = () => {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -25,28 +26,84 @@ const Index = () => {
 
   const { getProductsByCategory, loading } = useProducts();
 
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash) {
+      requestAnimationFrame(() => {
+        const el = document.querySelector(hash);
+        if (el) el.scrollIntoView({ behavior: "instant", block: "start" });
+      });
+    }
+  }, []);
+
   // Track page visit
   useEffect(() => {
     supabase.from("site_visits" as any).insert({ visited_at: new Date().toISOString(), referrer: document.referrer || null, user_agent: navigator.userAgent }).then(() => {});
   }, []);
   const location = useLocation();
-  const navigate = useNavigate();
+  const routeSectionId = getHomeSectionFromPathname(location.pathname);
+  const releaseInitialPageHide = () => {
+    document.documentElement.removeAttribute("data-initial-route-hide");
+  };
 
+  // Hide the page until an initial section route is restored.
+  const needsRestore = useRef(Boolean(routeSectionId));
+  const [pageVisible, setPageVisible] = useState(!needsRestore.current);
+  const lastNavigatedSection = useRef<string | null>(routeSectionId);
+
+  // Restore scroll position after products load — skip if there's a hash target
+  useLayoutEffect(() => {
+    if (loading) return;
+    if (!needsRestore.current) {
+      releaseInitialPageHide();
+      setPageVisible(true);
+      return;
+    }
+
+    if (routeSectionId) {
+      document.getElementById(routeSectionId)?.scrollIntoView({ behavior: "auto", block: "start" });
+    }
+
+    lastNavigatedSection.current = routeSectionId;
+    needsRestore.current = false;
+    releaseInitialPageHide();
+    setPageVisible(true);
+  }, [loading, routeSectionId]);
+
+  // Update the URL path as the user scrolls through homepage sections.
   useEffect(() => {
-    const sectionId = location.state?.scrollToSection || location.hash.replace("#", "");
-    if (!sectionId || loading) return;
+    if (loading) return;
+    const onScroll = () => {
+      let current = "";
+      for (const id of homeSectionIds) {
+        const el = document.getElementById(id);
+        if (el && el.getBoundingClientRect().top <= window.innerHeight * 0.4) current = id;
+      }
+      const nextPath = homeSectionPath(current || null);
+      if (window.location.pathname !== nextPath) {
+        window.history.replaceState(null, "", nextPath);
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [loading]);
+
+  useLayoutEffect(() => {
+    const sectionId = routeSectionId;
+    if (!sectionId || loading || needsRestore.current || lastNavigatedSection.current === sectionId) return;
 
     const el = document.getElementById(sectionId);
     if (el) {
-      requestAnimationFrame(() => {
-        el.scrollIntoView({ behavior: "auto", block: "start" });
-
-        if (location.state?.scrollToSection) {
-          navigate(location.pathname, { replace: true, state: null });
-        }
-      });
+      el.scrollIntoView({ behavior: "auto", block: "start" });
+      lastNavigatedSection.current = sectionId;
     }
-  }, [loading, location, navigate]);
+  }, [loading, routeSectionId]);
+
+  useEffect(() => {
+    if (!routeSectionId) {
+      releaseInitialPageHide();
+    }
+  }, [routeSectionId]);
 
   useEffect(() => {
     const heroEl = document.getElementById("hero-section");
@@ -80,7 +137,12 @@ const Index = () => {
   const brownies = browniesRaw.map(mapDbProduct);
 
   return (
-    <div className="min-h-screen bg-background overflow-x-hidden">
+    <div
+      className={`min-h-screen bg-background overflow-x-hidden transition-opacity duration-150 ${
+        pageVisible ? "opacity-100" : "opacity-0"
+      }`}
+      style={{ visibility: pageVisible ? "visible" : "hidden" }}
+    >
       <AnnouncementBar visible={heroVisible} />
 
       <Navbar onMenuOpen={() => setMenuOpen(true)} isHomePage heroVisible={heroVisible} />

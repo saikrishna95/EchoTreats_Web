@@ -5,6 +5,7 @@ import ProductCard, { type Product } from "./ProductCard";
 import ProductDetailModal from "./ProductDetailModal";
 import { useState } from "react";
 import type { Database } from "@/integrations/supabase/types";
+import { homeSectionPath } from "@/lib/homeSections";
 
 type ProductRow = Database["public"]["Tables"]["products"]["Row"];
 
@@ -54,7 +55,7 @@ const ProductSection = ({ id, title, subtitle, products, rawProducts, accent, ca
           className="text-center mt-8"
         >
           <button
-            onClick={() => navigate(categorySlug ? `/category/${categorySlug}` : `/#${id}`, categorySlug ? { state: { returnToSection: id } } : undefined)}
+            onClick={() => navigate(categorySlug ? `/category/${categorySlug}` : homeSectionPath(id), categorySlug ? { state: { returnToSection: id } } : undefined)}
             className="inline-flex items-center gap-2 px-4 sm:px-6 py-2.5 font-body text-sm font-medium text-foreground border border-border rounded-full hover:bg-secondary transition-colors whitespace-nowrap"
           >
             View Full Collection

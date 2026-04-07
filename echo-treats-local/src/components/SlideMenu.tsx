@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
 import logo from "@/assets/logo.png";
+import { homeSectionPath } from "@/lib/homeSections";
 
 interface SlideMenuProps {
   isOpen: boolean;
@@ -13,17 +14,17 @@ interface SlideMenuProps {
 }
 
 const shopItems = [
-  { label: "Shop All", href: "#products" },
-  { label: "Cakes", href: "#cakes" },
-  { label: "Brownies", href: "#brownies" },
-  { label: "Chocolates", href: "#chocolates" },
-  { label: "Cupcakes", href: "#cupcakes" },
-  { label: "Tub Desserts", href: "#tubs" },
-  { label: "Cheesecakes", href: "#cheesecakes" },
-  { label: "Biscuits & Cookies", href: "#cookies" },
-  { label: "Custom Orders", href: "#custom" },
-  { label: "Contact Us", href: "#contact" },
-  { label: "Our Story", href: "#story" },
+  { label: "Shop All", sectionId: "products" },
+  { label: "Cakes", sectionId: "cakes" },
+  { label: "Brownies", sectionId: "brownies" },
+  { label: "Chocolates", sectionId: "chocolates" },
+  { label: "Cupcakes", sectionId: "cupcakes" },
+  { label: "Tub Desserts", sectionId: "tubs" },
+  { label: "Cheesecakes", sectionId: "cheesecakes" },
+  { label: "Biscuits & Cookies", sectionId: "cookies" },
+  { label: "Custom Orders", sectionId: "custom" },
+  { label: "Contact Us", sectionId: "contact" },
+  { label: "Our Story", sectionId: "story" },
 ];
 
 const SlideMenu = ({ isOpen, onClose }: SlideMenuProps) => {
@@ -31,10 +32,9 @@ const SlideMenu = ({ isOpen, onClose }: SlideMenuProps) => {
   const navigate = useNavigate();
   const [showSignOut, setShowSignOut] = useState(false);
 
-  const handleClick = (href: string) => {
+  const handleClick = (sectionId: string) => {
     onClose();
-    const el = document.querySelector(href);
-    el?.scrollIntoView({ behavior: "smooth" });
+    navigate(homeSectionPath(sectionId));
   };
 
   const handleNav = (path: string) => {
@@ -118,7 +118,7 @@ const SlideMenu = ({ isOpen, onClose }: SlideMenuProps) => {
                 {shopItems.map((item) => (
                   <button
                     key={item.label}
-                    onClick={() => handleClick(item.href)}
+                    onClick={() => handleClick(item.sectionId)}
                     className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-body font-medium text-foreground hover:bg-secondary rounded-lg transition-colors"
                   >
                     {item.label}

@@ -11,6 +11,7 @@ import heroBg from "@/assets/hero-bakery.jpg";
 import logo from "@/assets/logo.png";
 import ProductDetailModal from "@/components/ProductDetailModal";
 import type { Database } from "@/integrations/supabase/types";
+import { homeSectionPath } from "@/lib/homeSections";
 
 import imgCake from "@/assets/category_logo/cake.png";
 import imgBrownie from "@/assets/category_logo/brownie.png";
@@ -24,14 +25,14 @@ import imgCustom from "@/assets/category_logo/custom.png";
 type ProductRow = Database["public"]["Tables"]["products"]["Row"];
 
 const categories = [
-  { img: imgCake, label: "Cakes", href: "#cakes" },
-  { img: imgBrownie, label: "Brownies", href: "#brownies" },
-  { img: imgChocolate, label: "Chocolates", href: "#chocolates" },
-  { img: imgCupcake, label: "Cupcakes", href: "#cupcakes" },
-  { img: imgTub, label: "Tub Desserts", href: "#tubs" },
-  { img: imgCheesecake, label: "Cheesecakes", href: "#cheesecakes" },
-  { img: imgCookie, label: "Cookies", href: "#cookies" },
-  { img: imgCustom, label: "Customise", href: "#custom" },
+  { img: imgCake, label: "Cakes", sectionId: "cakes" },
+  { img: imgBrownie, label: "Brownies", sectionId: "brownies" },
+  { img: imgChocolate, label: "Chocolates", sectionId: "chocolates" },
+  { img: imgCupcake, label: "Cupcakes", sectionId: "cupcakes" },
+  { img: imgTub, label: "Tub Desserts", sectionId: "tubs" },
+  { img: imgCheesecake, label: "Cheesecakes", sectionId: "cheesecakes" },
+  { img: imgCookie, label: "Cookies", sectionId: "cookies" },
+  { img: imgCustom, label: "Customise", sectionId: "custom" },
 ];
 
 const HeroSection = () => {
@@ -54,9 +55,8 @@ const HeroSection = () => {
     ? `HI ${firstName.toUpperCase()}, WELCOME TO ECHOTREATS`
     : "WELCOME TO ECHOTREATS";
 
-  const scrollTo = (href: string) => {
-    const el = document.querySelector(href);
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const scrollTo = (sectionId: string) => {
+    navigate(homeSectionPath(sectionId));
   };
 
   const filtered = useMemo(() => {
@@ -90,7 +90,7 @@ const HeroSection = () => {
     <div className="flex justify-center gap-3 flex-wrap">
       <button
         type="button"
-        onClick={() => scrollTo("#products")}
+        onClick={() => scrollTo("products")}
         className={`px-6 py-3 bg-primary text-white rounded-full hover:scale-105 transition ${buttonClassName}`}
       >
         View Menu
@@ -98,7 +98,7 @@ const HeroSection = () => {
 
       <button
         type="button"
-        onClick={() => scrollTo("#custom")}
+        onClick={() => scrollTo("custom")}
         className={`px-6 py-3 bg-white/70 border rounded-full hover:scale-105 transition ${buttonClassName}`}
       >
         Custom Orders
@@ -161,14 +161,14 @@ const HeroSection = () => {
   );
 
   const renderIconItem = (
-    cat: { img: string; label: string; href: string },
+    cat: { img: string; label: string; sectionId: string },
     imgClassName: string,
     textClassName: string
   ) => (
     <button
       key={cat.label}
       type="button"
-      onClick={() => scrollTo(cat.href)}
+      onClick={() => scrollTo(cat.sectionId)}
       className="flex flex-col items-center justify-start hover:scale-105 transition"
     >
       <img

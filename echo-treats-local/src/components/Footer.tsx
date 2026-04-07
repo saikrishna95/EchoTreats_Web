@@ -1,6 +1,7 @@
 import { Instagram, Mail, MapPin, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
 import logo from "@/assets/logo-footer.png";
+import { homeSectionPath } from "@/lib/homeSections";
 
 const Footer = () => {
   return (
@@ -20,7 +21,7 @@ const Footer = () => {
             <h4 className="font-heading text-sm font-semibold mb-4 opacity-90">About</h4>
             <ul className="space-y-2">
               <li>
-                <a href="#story" className="font-body text-sm opacity-60 hover:opacity-100 transition-opacity">Our Story</a>
+                <Link to={homeSectionPath("story")} className="font-body text-sm opacity-60 hover:opacity-100 transition-opacity">Our Story</Link>
               </li>
               <li>
                 <a href="#" className="font-body text-sm opacity-60 hover:opacity-100 transition-opacity">Ingredients</a>

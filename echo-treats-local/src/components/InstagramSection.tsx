@@ -37,7 +37,7 @@ const InstagramSection = () => {
   }, []);
 
   return (
-    <section className="py-16 md:py-20 gradient-rose">
+    <section id="feed" className="py-16 md:py-20 gradient-rose">
       <div className="container">
         <motion.div
           initial={{ opacity: 0, y: 15 }}

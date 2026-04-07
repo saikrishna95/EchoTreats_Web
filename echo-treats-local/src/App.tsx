@@ -15,6 +15,7 @@ import NotFound from "./pages/NotFound.tsx";
 import PrivacyPolicy from "./pages/PrivacyPolicy.tsx";
 import RefundPolicy from "./pages/RefundPolicy.tsx";
 import TermsOfService from "./pages/TermsOfService.tsx";
+import { homeSectionIds, homeSectionPath } from "@/lib/homeSections";
 
 const queryClient = new QueryClient();
 
@@ -29,9 +30,14 @@ const App = () => (
             <ScrollToTop />
             <Routes>
               <Route path="/" element={<Index />} />
+              {homeSectionIds.map((sectionId) => (
+                <Route key={sectionId} path={homeSectionPath(sectionId)} element={<Index />} />
+              ))}
               <Route path="/auth" element={<Auth />} />
               <Route path="/profile" element={<Profile />} />
+              <Route path="/profile/:tab" element={<Profile />} />
               <Route path="/admin" element={<Admin />} />
+              <Route path="/admin/:tab" element={<Admin />} />
               <Route path="/category/:slug" element={<Category />} />
               <Route path="/privacy-policy" element={<PrivacyPolicy />} />
               <Route path="/refund-policy" element={<RefundPolicy />} />

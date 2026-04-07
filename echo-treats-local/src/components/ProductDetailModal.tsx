@@ -8,6 +8,7 @@ import { useWishlist } from "@/hooks/useWishlist";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import type { Database } from "@/integrations/supabase/types";
+import { homeSectionPath } from "@/lib/homeSections";
 
 type ProductRow = Database["public"]["Tables"]["products"]["Row"];
 
@@ -45,12 +46,7 @@ const ProductDetailModal = ({ product, open, onOpenChange }: ProductDetailModalP
 
   const handleCustomise = () => {
     onOpenChange(false);
-    const el = document.getElementById("custom");
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth" });
-    } else {
-      navigate("/#custom");
-    }
+    navigate(homeSectionPath("custom"));
   };
 
   const handleToggleWishlist = async () => {

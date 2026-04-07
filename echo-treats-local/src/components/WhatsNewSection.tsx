@@ -10,7 +10,7 @@ const WhatsNewSection = () => {
   if (loading || featured.length === 0) return null;
 
   return (
-    <section className="py-16 md:py-20 gradient-rose">
+    <section id="new" className="py-16 md:py-20 gradient-rose">
       <div className="container">
         <motion.div
           initial={{ opacity: 0, y: 15 }}
