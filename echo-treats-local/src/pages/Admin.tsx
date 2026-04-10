@@ -81,6 +81,9 @@ const Admin = () => {
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
   const [paymentInput, setPaymentInput] = useState("");
 
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [orderEditForm, setOrderEditForm] = useState<any>(null);
+  const [orderEditItems, setOrderEditItems] = useState<any[]>([]);
   const [orderSort, setOrderSort] = useState<"newest" | "oldest" | "total-high" | "total-low">("newest");
   const [customOrderFilter, setCustomOrderFilter] = useState("all");
   const [customOrderSort, setCustomOrderSort] = useState<"newest" | "oldest">("newest");
@@ -350,6 +353,71 @@ const Admin = () => {
     toast.success("Payment recorded");
     setPaymentOrderId(null);
     setPaymentInput("");
+    await fetchAll();
+  };
+
+  const startEditOrder = (o: Order) => {
+    const isOff = (o.notes || "").includes("[Offline Order]");
+    const gn = (key: string) => (o.notes || "").match(new RegExp(`${key}: (.+)`))?.[1]?.trim() || "";
+    const cleanExtra = isOff ? (o.notes || "")
+      .replace(/\[Offline Order\]\n?/,"").replace(/\[Reference Image\]\s*https?:\/\/\S+\n?/g,"")
+      .replace(/Occasion:.+\n?/g,"").replace(/Product Type:.+\n?/g,"").replace(/Flavor:.+\n?/g,"")
+      .replace(/Size\/Qty:.+\n?/g,"").replace(/Pincode:.+\n?/g,"").replace(/Cake Message:.+\n?/g,"")
+      .replace(/Special Request:.+\n?/g,"").replace(/Food Allergy:.+\n?/g,"").trim()
+      : (o.notes || "");
+    setOrderEditForm({
+      guest_name: o.guest_name || "", guest_email: o.guest_email || "", guest_phone: o.guest_phone || "",
+      delivery_date: o.delivery_date || "", delivery_address: o.delivery_address || "",
+      size_preference: (o as any).size_preference || "",
+      occasion: gn("Occasion"), product_type: gn("Product Type"), flavor: gn("Flavor"),
+      size_qty: gn("Size/Qty"), cake_message: gn("Cake Message"),
+      special_request: gn("Special Request"), food_allergy: gn("Food Allergy"),
+      extra_notes: cleanExtra,
+    });
+    setOrderEditItems((orderItems[o.id] || []).map((i: any) => ({
+      id: i.id, product_name: i.product_name, quantity: i.quantity, unit_price: i.unit_price,
+    })));
+  };
+
+  const saveOrderEdit = async () => {
+    if (!selectedOrder || !orderEditForm) return;
+    const o = selectedOrder;
+    const isOff = (o.notes || "").includes("[Offline Order]");
+    const refImg = (o.notes || "").match(/\[Reference Image\]\s*(https?:\/\/\S+)/)?.[1] || "";
+    let notes: string | null = orderEditForm.extra_notes || null;
+    if (isOff) {
+      notes = [
+        "[Offline Order]",
+        orderEditForm.occasion && `Occasion: ${orderEditForm.occasion}`,
+        orderEditForm.product_type && `Product Type: ${orderEditForm.product_type}`,
+        orderEditForm.flavor && `Flavor: ${orderEditForm.flavor}`,
+        orderEditForm.size_qty && `Size/Qty: ${orderEditForm.size_qty}`,
+        orderEditForm.cake_message && `Cake Message: ${orderEditForm.cake_message}`,
+        orderEditForm.special_request && `Special Request: ${orderEditForm.special_request}`,
+        orderEditForm.food_allergy && `Food Allergy: ${orderEditForm.food_allergy}`,
+        refImg && `[Reference Image] ${refImg}`,
+        orderEditForm.extra_notes,
+      ].filter(Boolean).join("\n");
+    }
+    const newTotal = orderEditItems.reduce((s, i) => s + Number(i.unit_price) * (Number(i.quantity) || 1), 0);
+    const { error } = await (supabase.from("orders") as any).update({
+      guest_name: orderEditForm.guest_name || null, guest_email: orderEditForm.guest_email || null,
+      guest_phone: orderEditForm.guest_phone || null, delivery_date: orderEditForm.delivery_date || null,
+      delivery_address: orderEditForm.delivery_address || null, notes,
+      size_preference: orderEditForm.size_preference || null, total: newTotal || o.total,
+    }).eq("id", o.id);
+    if (error) { toast.error("Failed to update order"); return; }
+    await supabase.from("order_items").delete().eq("order_id", o.id);
+    const valid = orderEditItems.filter(i => i.product_name?.trim());
+    if (valid.length > 0) {
+      await supabase.from("order_items").insert(valid.map(i => ({
+        order_id: o.id, product_name: i.product_name.trim(),
+        quantity: Number(i.quantity) || 1, unit_price: Number(i.unit_price) || 0,
+      })));
+    }
+    toast.success("Order updated");
+    setOrderEditForm(null);
+    setSelectedOrder(null);
     await fetchAll();
   };
 
@@ -1087,7 +1155,7 @@ const Admin = () => {
                   : offlineProductType;
 
                 return (
-                  <div key={o.id} className="bg-card rounded-xl border border-border/50 overflow-hidden">
+                  <div key={o.id} className="bg-card rounded-xl border border-border/50 overflow-hidden cursor-pointer hover:border-primary/40 transition-colors" onClick={() => setSelectedOrder(o)}>
                     <div className="p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex-1 min-w-0">
@@ -1124,7 +1192,7 @@ const Admin = () => {
                             Ordered: {new Date(o.created_at).toLocaleString()} {o.delivery_date ? `• Delivery: ${o.delivery_date}` : ""}
                           </p>
                           {o.status === "delivered" && (
-                            <div className="mt-2 pt-2 border-t border-border/30">
+                            <div className="mt-2 pt-2 border-t border-border/30" onClick={e => e.stopPropagation()}>
                               {(o as any).payment_received ? (
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-body text-xs text-green-600 font-medium">
@@ -1166,7 +1234,7 @@ const Admin = () => {
                             </div>
                           )}
                         </div>
-                        <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        <div className="flex flex-col items-end gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                           <div className="flex items-center gap-2">
                             <p className="font-body text-sm font-bold text-foreground">₹{Number(o.total).toLocaleString()}</p>
                             <select value={o.status} onChange={e => updateOrderStatus(o.id, e.target.value)}
@@ -1228,6 +1296,114 @@ const Admin = () => {
             </div>
           </motion.div>
         )}
+
+        {/* ── ORDER DETAIL MODAL ── */}
+        <AnimatePresence>
+          {selectedOrder && (() => {
+            const o = selectedOrder;
+            const profile = profiles.find(p => p.user_id === o.user_id);
+            const customerName = o.guest_name || profile?.full_name || "Guest";
+            const customerEmail = o.guest_email || profile?.email || "—";
+            const customerPhone = o.guest_phone || profile?.phone || "—";
+            const items = orderItems[o.id] || [];
+            const isOffline = (o.notes || "").includes("[Offline Order]");
+            const getNoteField = (key: string) => (o.notes || "").match(new RegExp(`${key}: (.+)`))?.[1]?.trim() || "";
+            const cleanNotes = (o.notes || "")
+              .replace(/\[Offline Order\]\n?/, "")
+              .replace(/\[Reference Image\]\s*https?:\/\/\S+/g, "")
+              .replace(/Occasion:.+\n?/g, "").replace(/Product Type:.+\n?/g, "")
+              .replace(/Flavor:.+\n?/g, "").replace(/Size\/Qty:.+\n?/g, "")
+              .replace(/Pincode:.+\n?/g, "").replace(/Cake Message:.+\n?/g, "")
+              .replace(/Special Request:.+\n?/g, "").replace(/Food Allergy:.+\n?/g, "")
+              .trim();
+            const refImageUrl = (o.notes || "").match(/\[Reference Image\]\s*(https?:\/\/\S+)/)?.[1] || "";
+            const rows: [string, string][] = [
+              ["Order ID", `#${o.id.slice(0, 8).toUpperCase()} (${o.id})`],
+              ["Status", o.status],
+              ["Customer", customerName],
+              ["Email", customerEmail],
+              ["Phone", customerPhone],
+              ...(((o as any).size_preference ? [["Size Preference", (o as any).size_preference]] : []) as [string,string][]),
+              ...(isOffline ? [
+                ...(getNoteField("Occasion") ? [["Occasion", getNoteField("Occasion")]] : []),
+                ...(getNoteField("Product Type") ? [["Product Type", getNoteField("Product Type")]] : []),
+                ...(getNoteField("Flavor") ? [["Flavor", getNoteField("Flavor")]] : []),
+                ...(getNoteField("Size/Qty") ? [["Size / Qty", getNoteField("Size/Qty")]] : []),
+                ...(getNoteField("Cake Message") ? [["Cake Message", getNoteField("Cake Message")]] : []),
+                ...(getNoteField("Special Request") ? [["Special Request", getNoteField("Special Request")]] : []),
+                ...(getNoteField("Food Allergy") ? [["Food Allergy", getNoteField("Food Allergy")]] : []),
+              ] as [string,string][] : []),
+              ...(o.delivery_date ? [["Delivery Date", o.delivery_date]] as [string,string][] : []),
+              ...(o.delivery_address ? [["Delivery Address", o.delivery_address]] as [string,string][] : []),
+              ...(cleanNotes ? [["Notes", cleanNotes]] as [string,string][] : []),
+              ["Ordered On", new Date(o.created_at).toLocaleString()],
+              ...(o.updated_at !== o.created_at ? [["Last Updated", new Date(o.updated_at).toLocaleString()]] as [string,string][] : []),
+              ["Payment", (o as any).payment_received
+                ? `Received — ₹${Number((o as any).payment_amount ?? o.total).toLocaleString()}`
+                : "Not yet recorded"],
+            ];
+            return (
+              <>
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                  className="fixed inset-0 bg-foreground/40 backdrop-blur-sm z-50"
+                  onClick={() => setSelectedOrder(null)} />
+                <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.96 }} transition={{ duration: 0.18 }}
+                  className="fixed inset-0 z-50 flex items-center justify-center p-4">
+                  <div className="bg-background rounded-2xl shadow-hover w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                    <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-background z-10">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="font-heading text-lg font-semibold">Order Details</h2>
+                        <span className={`text-[11px] px-2 py-0.5 rounded-full font-body font-medium ${STATUS_COLORS[o.status] || "bg-secondary text-foreground"}`}>{o.status}</span>
+                        {isOffline && <span className="text-[11px] px-2 py-0.5 rounded-full font-body font-medium bg-slate-100 text-slate-600">Offline</span>}
+                      </div>
+                      <button type="button" onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="p-5 space-y-4">
+                      {/* Items */}
+                      {items.length > 0 && (
+                        <div>
+                          <p className="font-body text-xs font-semibold text-foreground uppercase tracking-wide mb-2">Items Ordered</p>
+                          <div className="space-y-1.5 bg-secondary/30 rounded-xl p-3">
+                            {items.map((item: any) => (
+                              <div key={item.id} className="flex justify-between items-center font-body text-sm">
+                                <span className="text-foreground">{item.product_name}</span>
+                                <span className="text-muted-foreground text-xs">×{item.quantity} @ ₹{Number(item.unit_price).toLocaleString()} = <strong className="text-foreground">₹{(item.quantity * Number(item.unit_price)).toLocaleString()}</strong></span>
+                              </div>
+                            ))}
+                            <div className="flex justify-between items-center font-body text-sm pt-1.5 mt-1.5 border-t border-border/50">
+                              <span className="font-semibold text-foreground">Total</span>
+                              <span className="font-bold text-foreground">₹{Number(o.total).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      {/* Details grid */}
+                      <div>
+                        <p className="font-body text-xs font-semibold text-foreground uppercase tracking-wide mb-2">Order Information</p>
+                        <div className="space-y-2">
+                          {rows.map(([label, value]) => (
+                            <div key={label} className="flex gap-3">
+                              <span className="font-body text-xs text-muted-foreground w-32 shrink-0 pt-0.5">{label}</span>
+                              <span className={`font-body text-sm text-foreground break-all ${label === "Payment" && !(o as any).payment_received ? "text-amber-600" : label === "Payment" ? "text-green-600" : ""}`}>{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {/* Reference image */}
+                      {refImageUrl && (
+                        <div>
+                          <p className="font-body text-xs font-semibold text-foreground uppercase tracking-wide mb-2">Reference Image</p>
+                          <img src={refImageUrl} alt="Reference" className="rounded-xl w-full max-h-64 object-cover border border-border" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              </>
+            );
+          })()}
+        </AnimatePresence>
 
         {/* ── CUSTOM ORDERS TAB ── */}
         {!dataLoading && tab === "custom" && (
