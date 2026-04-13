@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft, Package, ShoppingBag, Plus, Trash2, Edit2, Check,
+  ArrowLeft, Package, ShoppingBag, Plus, Trash2, Edit2, Check, Pencil,
   MessageSquare, Star, Bell, X, Upload, Download, Users,
   BarChart2, Tag, TrendingUp, ChevronDown, Search, RefreshCw,
   ToggleLeft, ToggleRight, Megaphone, Instagram, Link,
@@ -18,7 +18,7 @@ type Order = Database["public"]["Tables"]["orders"]["Row"];
 type CustomOrder = Database["public"]["Tables"]["custom_orders"]["Row"];
 
 const emptyProductForm = {
-  name: "", description: "", price: "", category_id: "",
+  name: "", description: "", price: "", cost_price: "", category_id: "",
   tags: "", image_url: "", is_featured: false, occasion: "", is_available: true,
 };
 
@@ -81,6 +81,9 @@ const Admin = () => {
 
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
   const [paymentInput, setPaymentInput] = useState("");
+  const [remarkEditId, setRemarkEditId] = useState<string | null>(null);
+  const [remarkInput, setRemarkInput] = useState("");
+  const [costInput, setCostInput] = useState("");
 
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orderEditForm, setOrderEditForm] = useState<any>(null);
@@ -207,6 +210,7 @@ const Admin = () => {
     setProductForm({
       name: product.name || "", description: product.description || "",
       price: product.price ? String(product.price) : "",
+      cost_price: (product as any).cost_price ? String((product as any).cost_price) : "",
       category_id: product.category_id || "", tags: product.tags?.join(", ") || "",
       image_url: product.image_url || "", is_featured: product.is_featured || false,
       occasion: (product as any).occasion || "", is_available: product.is_available ?? true,
@@ -241,6 +245,7 @@ const Admin = () => {
     const payload = {
       name: productForm.name, description: productForm.description,
       price: parseFloat(productForm.price), category_id: productForm.category_id || null,
+      cost_price: productForm.cost_price ? parseFloat(productForm.cost_price) : null,
       tags, image_url: imageUrl, is_featured: productForm.is_featured,
       occasion: productForm.occasion || null, is_available: productForm.is_available,
       media_urls: uploadedMedia.length > 0 ? uploadedMedia : null,
@@ -429,6 +434,17 @@ const Admin = () => {
     }).eq("id", orderId);
     if (error) { toast.error("Failed to update payment"); return; }
     toast.success("Payment cleared");
+    await fetchAll();
+  };
+
+  const saveOrderAdminData = async (orderId: string) => {
+    const { error } = await (supabase.from("orders") as any).update({
+      admin_remark: remarkInput.trim() || null,
+      cost_price: costInput ? parseFloat(costInput) : null,
+    }).eq("id", orderId);
+    if (error) { toast.error("Failed to save"); return; }
+    toast.success("Saved");
+    setRemarkEditId(null);
     await fetchAll();
   };
 
@@ -723,26 +739,93 @@ const Admin = () => {
   }, {});
   const repeatCustomers = Object.values(ordersByUser).filter(c => c > 1).length;
 
+  const _deliveredOrderIdsForCat = new Set(deliveredOrders.map(o => o.id));
   const revenueByCategory = categories.map(cat => {
-    const catProductIds = products.filter(p => p.category_id === cat.id).map(p => p.id);
-    // Only count items from delivered orders
-    const deliveredOrderIds = new Set(deliveredOrders.map(o => o.id));
+    const catProducts = products.filter(p => p.category_id === cat.id);
+    const catProductIds = catProducts.map(p => p.id);
+    const cpMap: Record<string, number | null> = {};
+    catProducts.forEach(p => { cpMap[p.id] = (p as any).cost_price != null ? Number((p as any).cost_price) : null; });
+
     let revenue = 0;
+    let revenueWithCp = 0;
+    let totalCost = 0;
+    let unitsSold = 0;
+
     Object.entries(orderItems).forEach(([orderId, items]) => {
-      if (!deliveredOrderIds.has(orderId)) return;
-      (items as any[]).forEach(item => {
-        if (catProductIds.includes(item.product_id)) revenue += Number(item.unit_price) * item.quantity;
+      if (!_deliveredOrderIdsForCat.has(orderId)) return;
+      (items as any[]).forEach((item: any) => {
+        if (!catProductIds.includes(item.product_id)) return;
+        const lineRevenue = Number(item.unit_price) * item.quantity;
+        revenue += lineRevenue;
+        unitsSold += item.quantity;
+        if (cpMap[item.product_id] != null) {
+          revenueWithCp += lineRevenue;
+          totalCost += cpMap[item.product_id]! * item.quantity;
+        }
       });
     });
-    return { name: cat.name, revenue };
+
+    const profit = revenueWithCp - totalCost;
+    const margin = revenueWithCp > 0 ? (profit / revenueWithCp) * 100 : null;
+    return { name: cat.name, revenue, revenueWithCp, totalCost, profit, margin, unitsSold, hasCp: revenueWithCp > 0 };
   }).filter(c => c.revenue > 0).sort((a, b) => b.revenue - a.revenue);
 
+  const deliveredOrderIds = new Set(deliveredOrders.map(o => o.id));
   const topProducts = products.map(p => {
     const sold = Object.values(orderItems).flat()
       .filter((i: any) => i.product_id === p.id)
       .reduce((s: number, i: any) => s + i.quantity, 0);
-    return { name: p.name, sold };
-  }).filter(p => p.sold > 0).sort((a, b) => b.sold - a.sold).slice(0, 5);
+    const revenue = Object.entries(orderItems).reduce((s, [ordId, items]) => {
+      if (!deliveredOrderIds.has(ordId)) return s;
+      return s + (items as any[]).filter((i: any) => i.product_id === p.id).reduce((ss: number, i: any) => ss + Number(i.unit_price) * i.quantity, 0);
+    }, 0);
+    const sp = Number(p.price);
+    const cp = (p as any).cost_price != null ? Number((p as any).cost_price) : null;
+    const margin = cp != null && sp > 0 ? ((sp - cp) / sp) * 100 : null;
+    return { name: p.name, sold, revenue, sp, cp, margin };
+  }).filter(p => p.sold > 0).sort((a, b) => b.sold - a.sold).slice(0, 8);
+
+  // Profitability from orders with cost_price recorded
+  const ordersWithCost = deliveredOrders.filter(o => (o as any).cost_price != null && (o as any).payment_received);
+  const totalCostRecorded = ordersWithCost.reduce((s, o) => s + Number((o as any).cost_price), 0);
+  const revenueFromCostOrders = ordersWithCost.reduce((s, o) => s + Number((o as any).payment_amount ?? o.total), 0);
+  const totalProfit = revenueFromCostOrders - totalCostRecorded;
+  const overallMargin = revenueFromCostOrders > 0 ? (totalProfit / revenueFromCostOrders) * 100 : null;
+
+  // Monthly profitability — last 6 months
+  const monthlyProfitability = (() => {
+    const result: { key: string; label: string; revenue: number; cost: number; profit: number; margin: number | null; hasCP: boolean }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(1);
+      d.setMonth(d.getMonth() - i);
+      const key = d.toISOString().slice(0, 7);
+      const label = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
+      const monthOrders = deliveredOrders.filter(o => o.created_at.startsWith(key));
+      let revenue = 0;
+      let cost = 0;
+      let hasCP = false;
+      monthOrders.forEach(o => {
+        revenue += Number((o as any).payment_amount ?? o.total);
+        // Prefer product-level CP via order items; fall back to per-order CP
+        const items = (orderItems[o.id] || []) as any[];
+        let itemsCost = 0;
+        let allHaveCP = items.length > 0;
+        items.forEach((item: any) => {
+          const prod = products.find(p => p.id === item.product_id);
+          const cp = prod && (prod as any).cost_price != null ? Number((prod as any).cost_price) : null;
+          if (cp != null) { itemsCost += cp * item.quantity; }
+          else { allHaveCP = false; }
+        });
+        if (allHaveCP && items.length > 0) { cost += itemsCost; hasCP = true; }
+        else if ((o as any).cost_price != null) { cost += Number((o as any).cost_price); hasCP = true; }
+      });
+      const profit = revenue - cost;
+      const margin = hasCP && revenue > 0 ? (profit / revenue) * 100 : null;
+      result.push({ key, label, revenue, cost, profit, margin, hasCP });
+    }
+    return result;
+  })();
 
   const ordersByStatus = ["pending", "confirmed", "preparing", "ready", "delivered", "cancelled"].map(s => ({
     status: s, count: orders.filter(o => o.status === s).length
@@ -1104,8 +1187,34 @@ const Admin = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <input placeholder="Product Name" value={productForm.name}
                     onChange={e => setProductForm({ ...productForm, name: e.target.value })} className={inputCls} />
-                  <input placeholder="Price (₹)" type="number" value={productForm.price}
+                  <input placeholder="Selling Price (₹)" type="number" value={productForm.price}
                     onChange={e => setProductForm({ ...productForm, price: e.target.value })} className={inputCls} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <input placeholder="Cost Price / CP (₹) — making cost" type="number" value={productForm.cost_price}
+                    onChange={e => setProductForm({ ...productForm, cost_price: e.target.value })} className={inputCls} />
+                  {productForm.price && productForm.cost_price && parseFloat(productForm.price) > 0 ? (
+                    <div className="flex items-center px-4 py-3 bg-secondary/50 border border-border rounded-xl">
+                      <span className="font-body text-sm text-muted-foreground">Margin: </span>
+                      {(() => {
+                        const m = (parseFloat(productForm.price) - parseFloat(productForm.cost_price)) / parseFloat(productForm.price) * 100;
+                        return (
+                          <>
+                            <span className={`font-body text-sm font-semibold ml-1 ${m >= 70 ? "text-purple-600" : m >= 50 ? "text-green-600" : m >= 30 ? "text-amber-600" : "text-red-500"}`}>
+                              {m.toFixed(1)}%
+                            </span>
+                            <span className={`ml-1.5 font-body text-[10px] px-1.5 py-0.5 rounded-full ${m >= 70 ? "bg-purple-100 text-purple-700" : m >= 50 ? "bg-green-100 text-green-700" : m >= 30 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                              {m >= 70 ? "🔥 Premium" : m >= 50 ? "🟢 Good" : m >= 30 ? "🟡 Average" : "🔴 Low"}
+                            </span>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    <div className="flex items-center px-4 py-3 bg-secondary/30 border border-border/40 rounded-xl">
+                      <span className="font-body text-xs text-muted-foreground">Enter both prices to see margin</span>
+                    </div>
+                  )}
                 </div>
 
                 <textarea placeholder="Description" value={productForm.description}
@@ -1295,11 +1404,16 @@ const Admin = () => {
                           </p>
                           {o.status === "delivered" && (
                             <div className="mt-2 pt-2 border-t border-border/30" onClick={e => e.stopPropagation()}>
-                              {(o as any).payment_received ? (
+                              {(o as any).payment_received && paymentOrderId !== o.id ? (
                                 <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-body text-xs text-green-600 font-medium">
                                     ✓ Payment received — ₹{Number((o as any).payment_amount ?? o.total).toLocaleString()}
                                   </span>
+                                  <button type="button"
+                                    onClick={() => { setPaymentOrderId(o.id); setPaymentInput(String((o as any).payment_amount ?? o.total)); }}
+                                    className="font-body text-[11px] text-primary underline hover:opacity-80">
+                                    Edit
+                                  </button>
                                   <button type="button" onClick={() => clearPayment(o.id)}
                                     className="font-body text-[11px] text-muted-foreground underline hover:text-destructive">
                                     Clear
@@ -1389,6 +1503,72 @@ const Admin = () => {
                           {o.notes && (
                             <p className="font-body text-xs text-muted-foreground mt-1">📝 {o.notes}</p>
                           )}
+                          {/* Admin remark + cost price */}
+                          <div className="mt-2 pt-2 border-t border-border/30" onClick={e => e.stopPropagation()}>
+                            {remarkEditId === o.id ? (
+                              <div className="space-y-2">
+                                <textarea
+                                  placeholder="Admin remark (internal note)..."
+                                  value={remarkInput}
+                                  onChange={e => setRemarkInput(e.target.value)}
+                                  rows={2}
+                                  className="w-full px-2 py-1.5 border border-border rounded-lg font-body text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 resize-none bg-background"
+                                />
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-body text-xs text-muted-foreground">Cost price (₹):</span>
+                                  <input
+                                    type="number"
+                                    value={costInput}
+                                    onChange={e => setCostInput(e.target.value)}
+                                    placeholder="0"
+                                    className="w-24 px-2 py-1 border border-border rounded-lg font-body text-xs focus:outline-none focus:ring-1 focus:ring-primary/40"
+                                  />
+                                  {costInput && Number(o.total) > 0 && (
+                                    <span className={`font-body text-xs font-semibold ${
+                                      ((Number(o.total) - parseFloat(costInput)) / Number(o.total) * 100) >= 40
+                                        ? "text-green-600" : "text-amber-600"
+                                    }`}>
+                                      Margin: {(((Number(o.total) - parseFloat(costInput)) / Number(o.total)) * 100).toFixed(1)}%
+                                    </span>
+                                  )}
+                                  <button type="button" onClick={() => saveOrderAdminData(o.id)}
+                                    className="px-3 py-1 bg-primary text-primary-foreground rounded-lg font-body text-xs hover:opacity-90">Save</button>
+                                  <button type="button" onClick={() => setRemarkEditId(null)}
+                                    className="font-body text-xs text-muted-foreground underline">Cancel</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="space-y-0.5">
+                                  {(o as any).admin_remark && (
+                                    <p className="font-body text-xs text-muted-foreground">🗒 {(o as any).admin_remark}</p>
+                                  )}
+                                  {(o as any).cost_price != null && (
+                                    <p className="font-body text-xs text-muted-foreground">
+                                      CP: ₹{Number((o as any).cost_price).toLocaleString()} · SP: ₹{Number(o.total).toLocaleString()} ·{" "}
+                                      <span className={`font-semibold ${
+                                        ((Number(o.total) - Number((o as any).cost_price)) / Number(o.total) * 100) >= 40
+                                          ? "text-green-600" : "text-amber-600"
+                                      }`}>
+                                        {(((Number(o.total) - Number((o as any).cost_price)) / Number(o.total)) * 100).toFixed(1)}% margin
+                                      </span>
+                                    </p>
+                                  )}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setRemarkEditId(o.id);
+                                    setRemarkInput((o as any).admin_remark || "");
+                                    setCostInput((o as any).cost_price != null ? String((o as any).cost_price) : "");
+                                  }}
+                                  className="font-body text-[11px] text-primary hover:underline shrink-0"
+                                >
+                                  {(o as any).admin_remark || (o as any).cost_price != null ? "Edit" : "+ Remark / CP"}
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -1448,19 +1628,144 @@ const Admin = () => {
               <>
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                   className="fixed inset-0 bg-foreground/40 backdrop-blur-sm z-50"
-                  onClick={() => setSelectedOrder(null)} />
+                  onClick={() => { setSelectedOrder(null); setRemarkEditId(null); }} />
                 <motion.div initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.96 }} transition={{ duration: 0.18 }}
                   className="fixed inset-0 z-50 flex items-center justify-center p-4">
                   <div className="bg-background rounded-2xl shadow-hover w-full max-w-lg max-h-[90vh] overflow-y-auto">
                     <div className="flex items-center justify-between p-5 border-b border-border sticky top-0 bg-background z-10">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h2 className="font-heading text-lg font-semibold">Order Details</h2>
+                        <h2 className="font-heading text-lg font-semibold">{orderEditForm ? "Edit Order" : "Order Details"}</h2>
                         <span className={`text-[11px] px-2 py-0.5 rounded-full font-body font-medium ${STATUS_COLORS[o.status] || "bg-secondary text-foreground"}`}>{o.status}</span>
                         {isOffline && <span className="text-[11px] px-2 py-0.5 rounded-full font-body font-medium bg-slate-100 text-slate-600">Offline</span>}
                       </div>
-                      <button type="button" onClick={() => setSelectedOrder(null)} className="p-2 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button>
+                      <div className="flex items-center gap-2">
+                        {!orderEditForm && (
+                          <button type="button" onClick={() => startEditOrder(o)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary hover:bg-secondary/80 rounded-lg font-body text-sm transition-colors">
+                            <Pencil className="w-3.5 h-3.5" /> Edit
+                          </button>
+                        )}
+                        <button type="button" onClick={() => { setSelectedOrder(null); setRemarkEditId(null); setOrderEditForm(null); }} className="p-2 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button>
+                      </div>
                     </div>
+
+                    {/* ── EDIT FORM ── */}
+                    {orderEditForm ? (
+                      <div className="p-5 space-y-4">
+                        <p className="font-body text-xs text-muted-foreground">Edit order details below. Changes are saved immediately when you click Save.</p>
+
+                        {/* Customer info */}
+                        <div>
+                          <p className="font-body text-xs font-semibold text-foreground uppercase tracking-wide mb-2">Customer</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input placeholder="Customer Name" value={orderEditForm.guest_name}
+                              onChange={e => setOrderEditForm({ ...orderEditForm, guest_name: e.target.value })}
+                              className="px-3 py-2 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                            <input placeholder="Email" value={orderEditForm.guest_email}
+                              onChange={e => setOrderEditForm({ ...orderEditForm, guest_email: e.target.value })}
+                              className="px-3 py-2 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                            <input placeholder="Phone" value={orderEditForm.guest_phone}
+                              onChange={e => setOrderEditForm({ ...orderEditForm, guest_phone: e.target.value })}
+                              className="px-3 py-2 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                            <input placeholder="Size Preference" value={orderEditForm.size_preference}
+                              onChange={e => setOrderEditForm({ ...orderEditForm, size_preference: e.target.value })}
+                              className="px-3 py-2 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                          </div>
+                        </div>
+
+                        {/* Delivery */}
+                        <div>
+                          <p className="font-body text-xs font-semibold text-foreground uppercase tracking-wide mb-2">Delivery</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input type="date" value={orderEditForm.delivery_date}
+                              onChange={e => setOrderEditForm({ ...orderEditForm, delivery_date: e.target.value })}
+                              className="px-3 py-2 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                            <input placeholder="Delivery Address" value={orderEditForm.delivery_address}
+                              onChange={e => setOrderEditForm({ ...orderEditForm, delivery_address: e.target.value })}
+                              className="px-3 py-2 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                          </div>
+                        </div>
+
+                        {/* Offline order fields */}
+                        {isOffline && (
+                          <div>
+                            <p className="font-body text-xs font-semibold text-foreground uppercase tracking-wide mb-2">Order Details</p>
+                            <div className="grid grid-cols-2 gap-2">
+                              {[
+                                { key: "occasion", label: "Occasion" },
+                                { key: "product_type", label: "Product Type" },
+                                { key: "flavor", label: "Flavor" },
+                                { key: "size_qty", label: "Size / Qty" },
+                                { key: "cake_message", label: "Cake Message" },
+                                { key: "special_request", label: "Special Request" },
+                                { key: "food_allergy", label: "Food Allergy" },
+                              ].map(f => (
+                                <input key={f.key} placeholder={f.label} value={(orderEditForm as any)[f.key] || ""}
+                                  onChange={e => setOrderEditForm({ ...orderEditForm, [f.key]: e.target.value })}
+                                  className="px-3 py-2 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Items */}
+                        <div>
+                          <p className="font-body text-xs font-semibold text-foreground uppercase tracking-wide mb-2">Items & Pricing</p>
+                          <div className="space-y-2">
+                            {orderEditItems.map((item, idx) => (
+                              <div key={idx} className="flex gap-2 items-center">
+                                <input placeholder="Product name" value={item.product_name}
+                                  onChange={e => setOrderEditItems(prev => prev.map((x, i) => i === idx ? { ...x, product_name: e.target.value } : x))}
+                                  className="flex-1 px-3 py-2 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                                <input type="number" placeholder="Qty" value={item.quantity}
+                                  onChange={e => setOrderEditItems(prev => prev.map((x, i) => i === idx ? { ...x, quantity: e.target.value } : x))}
+                                  className="w-16 px-2 py-2 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                                <input type="number" placeholder="₹ Price" value={item.unit_price}
+                                  onChange={e => setOrderEditItems(prev => prev.map((x, i) => i === idx ? { ...x, unit_price: e.target.value } : x))}
+                                  className="w-24 px-2 py-2 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
+                                <button type="button" onClick={() => setOrderEditItems(prev => prev.filter((_, i) => i !== idx))}
+                                  className="p-2 text-destructive hover:bg-destructive/10 rounded-lg transition-colors">
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ))}
+                            <button type="button"
+                              onClick={() => setOrderEditItems(prev => [...prev, { id: "", product_name: "", quantity: 1, unit_price: 0 }])}
+                              className="flex items-center gap-1.5 text-xs font-body text-primary hover:underline mt-1">
+                              <Plus className="w-3 h-3" /> Add item
+                            </button>
+                          </div>
+                          {orderEditItems.length > 0 && (
+                            <p className="font-body text-sm font-semibold text-foreground mt-2 text-right">
+                              New Total: ₹{orderEditItems.reduce((s, i) => s + Number(i.unit_price) * (Number(i.quantity) || 1), 0).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Extra notes */}
+                        <div>
+                          <p className="font-body text-xs font-semibold text-foreground uppercase tracking-wide mb-2">Notes</p>
+                          <textarea placeholder="Extra notes..." value={orderEditForm.extra_notes}
+                            onChange={e => setOrderEditForm({ ...orderEditForm, extra_notes: e.target.value })}
+                            rows={2}
+                            className="w-full px-3 py-2 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none" />
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex gap-2 pt-1 border-t border-border/50">
+                          <button type="button" onClick={saveOrderEdit}
+                            className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-xl font-body text-sm font-semibold hover:opacity-90 transition-opacity">
+                            Save Changes
+                          </button>
+                          <button type="button" onClick={() => setOrderEditForm(null)}
+                            className="px-5 py-2.5 border border-border rounded-xl font-body text-sm hover:bg-secondary transition-colors">
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+
                     <div className="p-5 space-y-4">
                       {/* Items */}
                       {items.length > 0 && (
@@ -1499,7 +1804,83 @@ const Admin = () => {
                           <img src={refImageUrl} alt="Reference" className="rounded-xl w-full max-h-64 object-cover border border-border" />
                         </div>
                       )}
+
+                      {/* ── Admin Notes & Cost Price ── */}
+                      <div className="bg-secondary/30 rounded-xl p-4 border border-border/40 space-y-3">
+                        <p className="font-body text-xs font-semibold text-foreground uppercase tracking-wide">Admin Notes & Pricing</p>
+
+                        {/* Remark */}
+                        <div>
+                          <label className="font-body text-xs text-muted-foreground mb-1 block">Remark / Internal Note</label>
+                          <textarea
+                            placeholder="Add an internal note about this order..."
+                            value={remarkEditId === o.id ? remarkInput : ((o as any).admin_remark || "")}
+                            onChange={e => {
+                              if (remarkEditId !== o.id) {
+                                setRemarkEditId(o.id);
+                                setRemarkInput(e.target.value);
+                                setCostInput((o as any).cost_price != null ? String((o as any).cost_price) : "");
+                              } else {
+                                setRemarkInput(e.target.value);
+                              }
+                            }}
+                            rows={2}
+                            className="w-full px-3 py-2 bg-background border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                          />
+                        </div>
+
+                        {/* Cost price */}
+                        <div className="flex items-end gap-3 flex-wrap">
+                          <div className="flex-1 min-w-32">
+                            <label className="font-body text-xs text-muted-foreground mb-1 block">Cost Price / CP (₹)</label>
+                            <input
+                              type="number"
+                              placeholder="Making cost for this order"
+                              value={remarkEditId === o.id ? costInput : ((o as any).cost_price != null ? String((o as any).cost_price) : "")}
+                              onChange={e => {
+                                if (remarkEditId !== o.id) {
+                                  setRemarkEditId(o.id);
+                                  setRemarkInput((o as any).admin_remark || "");
+                                  setCostInput(e.target.value);
+                                } else {
+                                  setCostInput(e.target.value);
+                                }
+                              }}
+                              className="w-full px-3 py-2 bg-background border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            />
+                          </div>
+                          {/* Live margin preview */}
+                          {(remarkEditId === o.id ? costInput : (o as any).cost_price != null ? String((o as any).cost_price) : "") && Number(o.total) > 0 && (() => {
+                            const cp = parseFloat(remarkEditId === o.id ? costInput : String((o as any).cost_price));
+                            const margin = ((Number(o.total) - cp) / Number(o.total)) * 100;
+                            return (
+                              <div className="pb-1.5">
+                                <p className="font-body text-[10px] text-muted-foreground">SP ₹{Number(o.total).toLocaleString()} · Margin</p>
+                                <p className={`font-heading text-lg font-bold ${margin >= 70 ? "text-purple-600" : margin >= 50 ? "text-green-600" : margin >= 30 ? "text-amber-600" : "text-red-500"}`}>
+                                  {margin.toFixed(1)}%
+                                  <span className="font-body text-xs ml-1">{margin >= 70 ? "🔥" : margin >= 50 ? "🟢" : margin >= 30 ? "🟡" : "🔴"}</span>
+                                </p>
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Save button — only shown when editing */}
+                        {remarkEditId === o.id && (
+                          <div className="flex gap-2 pt-1">
+                            <button type="button" onClick={() => saveOrderAdminData(o.id)}
+                              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg font-body text-sm hover:opacity-90">
+                              Save
+                            </button>
+                            <button type="button" onClick={() => setRemarkEditId(null)}
+                              className="px-4 py-2 border border-border rounded-lg font-body text-sm hover:bg-secondary">
+                              Cancel
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
+                    )} {/* end view/edit ternary */}
                   </div>
                 </motion.div>
               </>
@@ -1830,7 +2211,8 @@ const Admin = () => {
                   if (!userSearch) return true;
                   const q = userSearch.toLowerCase();
                   return (p.full_name || "").toLowerCase().includes(q) ||
-                    (p.phone || "").includes(q);
+                    (p.phone || "").includes(q) ||
+                    (p.email || "").toLowerCase().includes(q);
                 })
                 .map(p => {
                   const isAdmin = !!userRoles.find(r => r.user_id === p.user_id && r.role === "admin");
@@ -1850,6 +2232,9 @@ const Admin = () => {
                           {isAdmin && <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-body font-medium">Admin</span>}
                           {isBlocked && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-body font-medium">Blocked</span>}
                         </div>
+                        <p className="font-body text-xs text-muted-foreground">
+                          {p.email || "—"}
+                        </p>
                         <p className="font-body text-xs text-muted-foreground">
                           {p.phone || "No phone"} • Joined {new Date(p.created_at).toLocaleDateString()} • {orderCount} order{orderCount !== 1 ? "s" : ""}
                         </p>
@@ -1950,6 +2335,116 @@ const Admin = () => {
               </div>
             </div>
 
+            {/* Profitability */}
+            <div className="bg-card rounded-2xl p-5 border border-border/50">
+              <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
+                <h3 className="font-heading text-base font-semibold">Profitability</h3>
+                {ordersWithCost.length > 0 && (
+                  <span className="font-body text-[10px] text-muted-foreground">Based on {ordersWithCost.length} delivered order{ordersWithCost.length !== 1 ? "s" : ""} with CP recorded</span>
+                )}
+              </div>
+
+              {/* Tier legend — always visible */}
+              <div className="flex flex-wrap gap-2 mb-4 mt-2">
+                {[
+                  { emoji: "🔴", label: "Low", range: "< 30%", bg: "bg-red-50 border-red-200 text-red-700" },
+                  { emoji: "🟡", label: "Average", range: "30 – 50%", bg: "bg-amber-50 border-amber-200 text-amber-700" },
+                  { emoji: "🟢", label: "Good", range: "50 – 70%", bg: "bg-green-50 border-green-200 text-green-700" },
+                  { emoji: "🔥", label: "Premium", range: "70% +", bg: "bg-purple-50 border-purple-200 text-purple-700" },
+                ].map(t => (
+                  <span key={t.label} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-body font-medium ${t.bg}`}>
+                    {t.emoji} {t.label} <span className="font-normal opacity-70">{t.range}</span>
+                  </span>
+                ))}
+              </div>
+
+              {ordersWithCost.length > 0 ? (
+                <>
+                  {/* Overall KPIs */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+                    <div className="text-center p-3 bg-secondary/30 rounded-xl">
+                      <p className="font-body text-[10px] text-muted-foreground mb-1">Total Selling Price</p>
+                      <p className="font-heading text-xl font-bold text-green-600">₹{revenueFromCostOrders.toLocaleString()}</p>
+                    </div>
+                    <div className="text-center p-3 bg-secondary/30 rounded-xl">
+                      <p className="font-body text-[10px] text-muted-foreground mb-1">Total Cost Price</p>
+                      <p className="font-heading text-xl font-bold text-red-500">₹{totalCostRecorded.toLocaleString()}</p>
+                    </div>
+                    <div className="text-center p-3 bg-secondary/30 rounded-xl">
+                      <p className="font-body text-[10px] text-muted-foreground mb-1">Profit</p>
+                      <p className={`font-heading text-xl font-bold ${totalProfit >= 0 ? "text-green-600" : "text-red-500"}`}>
+                        ₹{totalProfit.toLocaleString()}
+                      </p>
+                    </div>
+                    <div className="text-center p-3 bg-secondary/30 rounded-xl">
+                      <p className="font-body text-[10px] text-muted-foreground mb-1">Margin</p>
+                      <p className={`font-heading text-xl font-bold ${
+                        overallMargin! >= 70 ? "text-purple-600" : overallMargin! >= 50 ? "text-green-600" : overallMargin! >= 30 ? "text-amber-600" : "text-red-500"
+                      }`}>
+                        {overallMargin!.toFixed(1)}%
+                      </p>
+                      <p className="font-body text-[10px] text-muted-foreground mt-0.5">
+                        {overallMargin! >= 70 ? "🔥 Premium" : overallMargin! >= 50 ? "🟢 Good" : overallMargin! >= 30 ? "🟡 Average" : "🔴 Low"}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Monthly breakdown */}
+                  <div>
+                    <p className="font-body text-xs font-semibold text-foreground mb-2">Monthly Breakdown</p>
+                    <div className="overflow-x-auto">
+                      <table className="w-full font-body text-xs min-w-[480px]">
+                        <thead>
+                          <tr className="border-b border-border/50">
+                            <th className="text-left py-2 pr-3 text-muted-foreground font-medium">Month</th>
+                            <th className="text-right py-2 px-3 text-muted-foreground font-medium">Selling Price (SP)</th>
+                            <th className="text-right py-2 px-3 text-muted-foreground font-medium">Cost Price (CP)</th>
+                            <th className="text-right py-2 px-3 text-muted-foreground font-medium">Profit</th>
+                            <th className="text-right py-2 pl-3 text-muted-foreground font-medium">Margin</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {monthlyProfitability.map(m => (
+                            <tr key={m.key} className="border-b border-border/30 last:border-0 hover:bg-secondary/20 transition-colors">
+                              <td className="py-2 pr-3 text-foreground font-medium">{m.label}</td>
+                              <td className="text-right py-2 px-3 text-green-600 font-semibold">
+                                {m.revenue > 0 ? `₹${m.revenue.toLocaleString()}` : <span className="text-muted-foreground/50">—</span>}
+                              </td>
+                              <td className="text-right py-2 px-3 text-red-500">
+                                {m.hasCP ? `₹${m.cost.toLocaleString()}` : <span className="text-muted-foreground/50">—</span>}
+                              </td>
+                              <td className={`text-right py-2 px-3 font-semibold ${m.hasCP ? (m.profit >= 0 ? "text-green-600" : "text-red-500") : ""}`}>
+                                {m.hasCP ? `₹${m.profit.toLocaleString()}` : <span className="text-muted-foreground/50">—</span>}
+                              </td>
+                              <td className="text-right py-2 pl-3">
+                                {m.margin != null ? (
+                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                                    m.margin >= 70 ? "bg-purple-100 text-purple-700"
+                                    : m.margin >= 50 ? "bg-green-100 text-green-700"
+                                    : m.margin >= 30 ? "bg-amber-100 text-amber-700"
+                                    : "bg-red-100 text-red-700"
+                                  }`}>
+                                    {m.margin >= 70 ? "🔥" : m.margin >= 50 ? "🟢" : m.margin >= 30 ? "🟡" : "🔴"} {m.margin.toFixed(1)}%
+                                  </span>
+                                ) : (
+                                  <span className="text-muted-foreground/50 text-[10px]">no CP</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center gap-3 py-2">
+                  <span className="text-lg">📊</span>
+                  <p className="font-body text-sm text-muted-foreground">Set cost prices on products or record CP per order to see profitability analytics here.</p>
+                </div>
+              )}
+            </div>
+
             {/* Row 2 — Operations KPIs */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="bg-card rounded-2xl p-4 border border-border/50">
@@ -2033,37 +2528,141 @@ const Admin = () => {
 
               {/* Top Products */}
               <div className="bg-card rounded-2xl p-5 border border-border/50">
-                <h3 className="font-heading text-base font-semibold mb-4">Top Selling Products</h3>
+                <h3 className="font-heading text-base font-semibold mb-1">Top Selling Products</h3>
+                <p className="font-body text-[10px] text-muted-foreground mb-4">SP = selling price · CP = cost price set on product</p>
                 <div className="space-y-2">
                   {topProducts.map((p, i) => (
-                    <div key={p.name} className="flex items-center gap-3">
-                      <span className="font-body text-xs text-muted-foreground w-4">{i + 1}</span>
+                    <div key={p.name} className="flex items-center gap-2 py-1 border-b border-border/30 last:border-0">
+                      <span className="font-body text-xs text-muted-foreground w-4 shrink-0">{i + 1}</span>
                       <span className="font-body text-sm text-foreground flex-1 truncate">{p.name}</span>
-                      <span className="font-body text-xs text-primary font-semibold">{p.sold} sold</span>
+                      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                        <span className="font-body text-xs text-muted-foreground">{p.sold} sold</span>
+                        {p.revenue > 0 && <span className="font-body text-xs font-semibold text-green-600">₹{p.revenue.toLocaleString()}</span>}
+                        {p.cp != null ? (
+                          <>
+                            <span className="font-body text-[10px] text-muted-foreground">SP ₹{p.sp} / CP ₹{p.cp}</span>
+                            <span className={`font-body text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                              p.margin! >= 70 ? "bg-purple-100 text-purple-700"
+                              : p.margin! >= 50 ? "bg-green-100 text-green-700"
+                              : p.margin! >= 30 ? "bg-amber-100 text-amber-700"
+                              : "bg-red-100 text-red-700"
+                            }`}>
+                              {p.margin! >= 70 ? "🔥" : p.margin! >= 50 ? "🟢" : p.margin! >= 30 ? "🟡" : "🔴"} {p.margin!.toFixed(0)}%
+                            </span>
+                          </>
+                        ) : (
+                          <span className="font-body text-[10px] text-muted-foreground/50">no CP set</span>
+                        )}
+                      </div>
                     </div>
                   ))}
                   {topProducts.length === 0 && <p className="font-body text-xs text-muted-foreground text-center py-4">No sales data yet</p>}
                 </div>
               </div>
 
-              {/* Revenue by Category — delivered only */}
+              {/* Profitability by Category */}
               <div className="bg-card rounded-2xl p-5 border border-border/50 md:col-span-2">
-                <h3 className="font-heading text-base font-semibold mb-1">Revenue by Category</h3>
-                <p className="font-body text-[10px] text-muted-foreground mb-4">Delivered orders only</p>
-                <div className="space-y-2">
-                  {revenueByCategory.length === 0 ? (
-                    <p className="font-body text-xs text-muted-foreground text-center py-4">No delivered orders yet</p>
-                  ) : revenueByCategory.map(cat => (
-                    <div key={cat.name} className="flex items-center gap-3">
-                      <span className="font-body text-sm text-foreground w-32 truncate shrink-0">{cat.name}</span>
-                      <div className="flex-1 bg-secondary/50 rounded-full h-2">
-                        <div className="bg-green-500 h-2 rounded-full transition-all"
-                          style={{ width: `${(cat.revenue / revenueByCategory[0].revenue) * 100}%` }} />
-                      </div>
-                      <span className="font-body text-xs font-semibold text-foreground">₹{cat.revenue.toLocaleString()}</span>
-                    </div>
+                <h3 className="font-heading text-base font-semibold mb-1">Profitability by Category</h3>
+                <p className="font-body text-[10px] text-muted-foreground mb-3">
+                  Delivered orders only · Margin calculated from products with CP set
+                </p>
+
+                {/* Tier legend */}
+                <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-border/40">
+                  {[
+                    { emoji: "🔴", label: "Low", range: "< 30%", bg: "bg-red-50 border-red-200 text-red-700" },
+                    { emoji: "🟡", label: "Average", range: "30 – 50%", bg: "bg-amber-50 border-amber-200 text-amber-700" },
+                    { emoji: "🟢", label: "Good", range: "50 – 70%", bg: "bg-green-50 border-green-200 text-green-700" },
+                    { emoji: "🔥", label: "Premium", range: "70% +", bg: "bg-purple-50 border-purple-200 text-purple-700" },
+                  ].map(t => (
+                    <span key={t.label} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-body font-medium ${t.bg}`}>
+                      {t.emoji} {t.label} <span className="font-normal opacity-70">{t.range}</span>
+                    </span>
                   ))}
                 </div>
+
+                {revenueByCategory.length === 0 ? (
+                  <p className="font-body text-xs text-muted-foreground text-center py-4">No delivered orders yet</p>
+                ) : (
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {revenueByCategory.map(cat => {
+                      const tierColor = cat.hasCp
+                        ? cat.margin! >= 70 ? { pill: "bg-purple-100 text-purple-700", bar: "bg-purple-400", card: "border-purple-200" }
+                        : cat.margin! >= 50 ? { pill: "bg-green-100 text-green-700", bar: "bg-green-500", card: "border-green-200" }
+                        : cat.margin! >= 30 ? { pill: "bg-amber-100 text-amber-700", bar: "bg-amber-400", card: "border-amber-200" }
+                        : { pill: "bg-red-100 text-red-700", bar: "bg-red-400", card: "border-red-200" }
+                        : { pill: "bg-secondary text-muted-foreground", bar: "bg-green-500", card: "border-border/50" };
+
+                      return (
+                        <div key={cat.name} className={`rounded-xl border p-4 space-y-3 ${tierColor.card}`}>
+                          {/* Header */}
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="font-body text-sm font-semibold text-foreground leading-tight">{cat.name}</span>
+                            {cat.hasCp ? (
+                              <span className={`shrink-0 font-body text-[11px] font-bold px-2 py-0.5 rounded-full ${tierColor.pill}`}>
+                                {cat.margin! >= 70 ? "🔥" : cat.margin! >= 50 ? "🟢" : cat.margin! >= 30 ? "🟡" : "🔴"} {cat.margin!.toFixed(1)}%
+                              </span>
+                            ) : (
+                              <span className="shrink-0 font-body text-[10px] text-muted-foreground/60 bg-secondary px-2 py-0.5 rounded-full">no CP</span>
+                            )}
+                          </div>
+
+                          {/* Stats grid */}
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div>
+                              <p className="font-body text-[10px] text-muted-foreground">Units Sold</p>
+                              <p className="font-body text-sm font-semibold text-foreground">{cat.unitsSold}</p>
+                            </div>
+                            <div>
+                              <p className="font-body text-[10px] text-muted-foreground">Revenue (SP)</p>
+                              <p className="font-body text-sm font-semibold text-green-600">₹{cat.revenue.toLocaleString()}</p>
+                            </div>
+                            {cat.hasCp ? (
+                              <div>
+                                <p className="font-body text-[10px] text-muted-foreground">Profit</p>
+                                <p className={`font-body text-sm font-semibold ${cat.profit >= 0 ? "text-green-600" : "text-red-500"}`}>
+                                  ₹{cat.profit.toLocaleString()}
+                                </p>
+                              </div>
+                            ) : (
+                              <div>
+                                <p className="font-body text-[10px] text-muted-foreground">Profit</p>
+                                <p className="font-body text-sm text-muted-foreground/40">—</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* CP row */}
+                          {cat.hasCp && (
+                            <p className="font-body text-[10px] text-muted-foreground">
+                              Cost ₹{cat.totalCost.toLocaleString()} · SP ₹{cat.revenueWithCp.toLocaleString()}
+                            </p>
+                          )}
+
+                          {/* Stacked bar */}
+                          <div className="h-2 rounded-full overflow-hidden bg-secondary/40 flex">
+                            {cat.hasCp ? (
+                              <>
+                                <div className="bg-red-300 h-full transition-all"
+                                  style={{ width: `${Math.min((cat.totalCost / cat.revenueWithCp) * 100, 100)}%` }} />
+                                <div className={`h-full flex-1 transition-all ${tierColor.bar}`} />
+                              </>
+                            ) : (
+                              <div className="bg-green-400 h-full rounded-full transition-all"
+                                style={{ width: `${(cat.revenue / revenueByCategory[0].revenue) * 100}%` }} />
+                            )}
+                          </div>
+                          {cat.hasCp && (
+                            <div className="flex gap-3 font-body text-[10px] text-muted-foreground">
+                              <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-red-300" />Cost</span>
+                              <span className="flex items-center gap-1"><span className={`inline-block w-2 h-2 rounded-sm ${tierColor.bar}`} />Profit</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Business Insights */}
@@ -2092,6 +2691,38 @@ const Admin = () => {
                     <div className="flex gap-2 p-3 bg-green-50 rounded-xl border border-green-100">
                       <span className="text-green-500 text-sm">⭐</span>
                       <p className="font-body text-xs text-green-700">{repeatCustomers} repeat customer{repeatCustomers !== 1 ? "s" : ""} — great sign! Consider loyalty offers or early access to keep them coming back.</p>
+                    </div>
+                  )}
+                  {overallMargin != null && overallMargin >= 70 && (
+                    <div className="flex gap-2 p-3 bg-purple-50 rounded-xl border border-purple-100">
+                      <span className="text-sm">🔥</span>
+                      <p className="font-body text-xs text-purple-700">Profit margin is {overallMargin.toFixed(1)}% — Premium! Excellent pricing. You have room to reinvest in quality or run offers without hurting profitability.</p>
+                    </div>
+                  )}
+                  {overallMargin != null && overallMargin >= 50 && overallMargin < 70 && (
+                    <div className="flex gap-2 p-3 bg-green-50 rounded-xl border border-green-100">
+                      <span className="text-green-500 text-sm">🟢</span>
+                      <p className="font-body text-xs text-green-700">Profit margin is {overallMargin.toFixed(1)}% — Good. Solid for a bakery in Hyderabad. Keep your CP accurate (include packaging, gas, labor) to stay on track.</p>
+                    </div>
+                  )}
+                  {overallMargin != null && overallMargin >= 30 && overallMargin < 50 && (
+                    <div className="flex gap-2 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                      <span className="text-sm">🟡</span>
+                      <p className="font-body text-xs text-amber-700">Profit margin is {overallMargin.toFixed(1)}% — Average. Acceptable but aim for 50%+. Try increasing SP by ₹50–100 on popular products or reduce packaging cost.</p>
+                    </div>
+                  )}
+                  {overallMargin != null && overallMargin < 30 && (
+                    <div className="flex gap-2 p-3 bg-red-50 rounded-xl border border-red-100">
+                      <span className="text-sm">🔴</span>
+                      <p className="font-body text-xs text-red-700">Profit margin is {overallMargin.toFixed(1)}% — Low. For a Hyderabad home bakery, a healthy margin is 50–70%. Your selling price should be 2x–3x your total cost (ingredients + packaging + labor).</p>
+                    </div>
+                  )}
+                  {topProducts.some(p => p.cp != null && p.margin! < 30) && (
+                    <div className="flex gap-2 p-3 bg-amber-50 rounded-xl border border-amber-100">
+                      <span className="text-amber-500 text-sm">⚠</span>
+                      <p className="font-body text-xs text-amber-700">
+                        Low margin products: <strong>{topProducts.filter(p => p.cp != null && p.margin! < 30).map(p => p.name).join(", ")}</strong> — margin below 30% (Low zone). Consider repricing to at least 2x CP.
+                      </p>
                     </div>
                   )}
                   {monthGrowth !== null && monthGrowth < 0 && (

@@ -2,6 +2,46 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { supabase } from "@/integrations/supabase/client";
 import type { User, Session } from "@supabase/supabase-js";
 
+// Ensures a profile row exists with email + name for any user (email/password, Google, any OAuth)
+const ensureProfile = async (user: User) => {
+  const { data: existing } = await (supabase
+    .from("profiles") as any)
+    .select("user_id, full_name, email")
+    .eq("user_id", user.id)
+    .maybeSingle() as { data: { user_id: string; full_name: string | null; email: string | null } | null };
+
+  const metaName = (
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    ""
+  ).trim();
+
+  const updates: Record<string, string | null> = {
+    updated_at: new Date().toISOString(),
+  };
+
+  // Always store/refresh email from auth
+  if (user.email) updates.email = user.email;
+
+  if (!existing) {
+    // New user (Google OAuth etc.) — create profile with name + email
+    await supabase.from("profiles").upsert(
+      { user_id: user.id, full_name: metaName || null, ...updates },
+      { onConflict: "user_id" }
+    );
+  } else {
+    // Fill missing name from metadata
+    if (!existing.full_name && metaName) updates.full_name = metaName;
+    // Always keep email in sync
+    if (user.email && existing.email !== user.email) updates.email = user.email;
+    if (Object.keys(updates).length > 1) { // more than just updated_at
+      await supabase.from("profiles")
+        .update(updates)
+        .eq("user_id", user.id);
+    }
+  }
+};
+
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -32,12 +72,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
         // Call checkAdmin via setTimeout (keeps callback sync) — it will finalize loading
         setTimeout(() => checkAdmin(session.user.id, true), 0);
+        // For Google/OAuth sign-ins, ensure a profile row exists with their name
+        if (event === "SIGNED_IN") {
+          setTimeout(() => ensureProfile(session.user), 0);
+        }
       } else {
         setIsAdmin(false);
         setLoading(false);
@@ -68,10 +112,11 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     });
 
     if (!error && data.user) {
-      await supabase.from("profiles").upsert({
+      await (supabase.from("profiles") as any).upsert({
         user_id: data.user.id,
         full_name: fullName,
         phone: phone,
+        email: email,
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id" });
     }

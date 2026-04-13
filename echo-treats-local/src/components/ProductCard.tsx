@@ -214,8 +214,8 @@ const ProductCard = ({ product, index, onClick }: ProductCardProps) => {
         </div>
 
         <div className="p-4">
-          <h3 className="font-heading text-sm font-semibold text-foreground mb-1 line-clamp-1">{product.name}</h3>
-          <p className="text-xs font-body text-muted-foreground mb-2 line-clamp-1">{product.description}</p>
+          <h3 className="font-heading text-sm font-semibold text-foreground mb-1 leading-snug">{product.name}</h3>
+          <p className="text-xs font-body text-muted-foreground mb-2 line-clamp-3 leading-relaxed">{product.description}</p>
           <p className="font-body font-semibold text-sm text-foreground">{product.price}</p>
         </div>
       </div>
