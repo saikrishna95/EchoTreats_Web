@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { ShoppingBag, Minus, Plus, Palette, Leaf, ChefHat, ShieldCheck, Gift, CalendarDays, Heart, ArrowLeft } from "lucide-react";
@@ -24,8 +24,15 @@ const ProductDetailModal = ({ product, open, onOpenChange }: ProductDetailModalP
   const { isInWishlist, toggleWishlist } = useWishlist();
   const navigate = useNavigate();
   const [quantity, setQuantity] = useState(1);
+  const [activeMediaIdx, setActiveMediaIdx] = useState(0);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   if (!product) return null;
+
+  const mediaUrls: { type: "image" | "video" | "gif"; url: string }[] =
+    ((product as any).media_urls as { type: "image" | "video" | "gif"; url: string }[] | null) || [];
+  const hasMedia = mediaUrls.length > 0;
+  const activeMedia = hasMedia ? mediaUrls[activeMediaIdx] : null;
 
   const handleAddToCart = async () => {
     if (!user) {
@@ -69,7 +76,7 @@ const ProductDetailModal = ({ product, open, onOpenChange }: ProductDetailModalP
       open={open}
       onOpenChange={(v) => {
         onOpenChange(v);
-        if (!v) setQuantity(1);
+        if (!v) { setQuantity(1); setActiveMediaIdx(0); }
       }}
     >
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto p-0 rounded-2xl border-border/50 gap-0">
@@ -83,11 +90,49 @@ const ProductDetailModal = ({ product, open, onOpenChange }: ProductDetailModalP
             <ArrowLeft className="w-5 h-5 text-foreground" />
           </button>
 
-          <img
-            src={product.image_url || "/placeholder.svg"}
-            alt={product.name}
-            className="w-full h-64 sm:h-72 object-contain"
-          />
+          {/* Main media display */}
+          <div className="w-full h-64 sm:h-72 flex items-center justify-center overflow-hidden">
+            {activeMedia?.type === "video" ? (
+              <video
+                key={activeMedia.url}
+                src={activeMedia.url}
+                autoPlay
+                loop
+                muted
+                playsInline
+                controls
+                className="w-full h-full object-contain"
+              />
+            ) : (
+              <img
+                src={activeMedia?.url || product.image_url || "/placeholder.svg"}
+                alt={product.name}
+                className="w-full h-full object-contain"
+              />
+            )}
+          </div>
+
+          {/* Thumbnail strip — only shown when >1 media item */}
+          {hasMedia && mediaUrls.length > 1 && (
+            <div ref={scrollRef} className="flex gap-2 px-4 pb-3 overflow-x-auto scrollbar-none">
+              {mediaUrls.map((m, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setActiveMediaIdx(i)}
+                  className={`shrink-0 w-14 h-14 rounded-lg overflow-hidden border-2 transition-colors ${
+                    i === activeMediaIdx ? "border-primary" : "border-transparent"
+                  }`}
+                >
+                  {m.type === "video" ? (
+                    <video src={m.url} muted className="w-full h-full object-cover" />
+                  ) : (
+                    <img src={m.url} alt={`Media ${i + 1}`} className="w-full h-full object-cover" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
 
           <button
             type="button"

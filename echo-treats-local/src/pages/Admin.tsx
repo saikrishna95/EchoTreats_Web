@@ -4,10 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useNavigate, useParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  ArrowLeft, Package, ShoppingBag, Plus, Trash2, Edit2, Check, Eye,
-  MessageSquare, Star, Bell, X, Upload, Filter, Download, Users,
-  BarChart2, Tag, Store, TrendingUp, ChevronDown, Search, RefreshCw,
-  ToggleLeft, ToggleRight, Image as ImageIcon, Megaphone, Instagram, Link,
+  ArrowLeft, Package, ShoppingBag, Plus, Trash2, Edit2, Check,
+  MessageSquare, Star, Bell, X, Upload, Download, Users,
+  BarChart2, Tag, TrendingUp, ChevronDown, Search, RefreshCw,
+  ToggleLeft, ToggleRight, Megaphone, Instagram, Link,
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { toast } from "sonner";
@@ -55,10 +55,12 @@ const Admin = () => {
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [productForm, setProductForm] = useState(emptyProductForm);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Multi-media state for product form
+  type MediaItem = { type: "image" | "video" | "gif"; url: string; file?: File; preview?: string };
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const mediaFileInputRef = useRef<HTMLInputElement>(null);
 
   const [orderFilter, setOrderFilter] = useState("all");
   const [orderSearch, setOrderSearch] = useState("");
@@ -71,7 +73,6 @@ const Admin = () => {
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [showAddCategory, setShowAddCategory] = useState(false);
 
-  const [newAdminEmail, setNewAdminEmail] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUserForm, setNewUserForm] = useState({ name: "", email: "", phone: "", password: "" });
@@ -191,40 +192,18 @@ const Admin = () => {
     }
   };
 
-  // ── Image Upload ──────────────────────────────────────────────
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { toast.error("Image must be under 2MB"); return; }
-    setImageFile(file);
-    setImagePreview(URL.createObjectURL(file));
-  };
-
-  const uploadImage = async (): Promise<string | null> => {
-    if (!imageFile) return productForm.image_url || null;
-    setUploadingImage(true);
-    const ext = imageFile.name.split(".").pop();
-    const fileName = `products/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from("product-images").upload(fileName, imageFile, { upsert: true });
-    setUploadingImage(false);
-    if (error) { toast.error("Image upload failed"); return null; }
-    const { data } = supabase.storage.from("product-images").getPublicUrl(fileName);
-    return data.publicUrl;
-  };
 
   // ── Products ──────────────────────────────────────────────────
   const resetProductForm = () => {
     setProductForm(emptyProductForm);
     setEditingProductId(null);
     setShowAddProduct(false);
-    setImageFile(null);
-    setImagePreview(null);
+    setMediaItems([]);
   };
 
   const startEditProduct = (product: Product) => {
     setEditingProductId(product.id);
     setShowAddProduct(true);
-    setImagePreview(product.image_url || null);
     setProductForm({
       name: product.name || "", description: product.description || "",
       price: product.price ? String(product.price) : "",
@@ -232,18 +211,40 @@ const Admin = () => {
       image_url: product.image_url || "", is_featured: product.is_featured || false,
       occasion: (product as any).occasion || "", is_available: product.is_available ?? true,
     });
+    const existingMedia: MediaItem[] = ((product as any).media_urls as MediaItem[] | null) || [];
+    setMediaItems(existingMedia);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const saveProduct = async () => {
-    const imageUrl = await uploadImage();
+    setUploadingImage(true);
+    // Upload any new media files
+    const uploadedMedia: MediaItem[] = [];
+    for (const item of mediaItems) {
+      if (item.file) {
+        const ext = item.file.name.split(".").pop();
+        const fileName = `products/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error } = await supabase.storage.from("product-images").upload(fileName, item.file, { upsert: true });
+        if (error) { toast.error("Media upload failed"); setUploadingImage(false); return; }
+        const { data } = supabase.storage.from("product-images").getPublicUrl(fileName);
+        uploadedMedia.push({ type: item.type, url: data.publicUrl });
+      } else {
+        uploadedMedia.push({ type: item.type, url: item.url });
+      }
+    }
+    // First media item (image/gif) becomes image_url for backwards compat
+    const firstImageItem = uploadedMedia.find(m => m.type === "image" || m.type === "gif");
+    const imageUrl = firstImageItem?.url || productForm.image_url || null;
+    setUploadingImage(false);
+
     const tags = productForm.tags ? productForm.tags.split(",").map(t => t.trim()).filter(Boolean) : [];
     const payload = {
       name: productForm.name, description: productForm.description,
       price: parseFloat(productForm.price), category_id: productForm.category_id || null,
       tags, image_url: imageUrl, is_featured: productForm.is_featured,
       occasion: productForm.occasion || null, is_available: productForm.is_available,
-    };
+      media_urls: uploadedMedia.length > 0 ? uploadedMedia : null,
+    } as any;
 
     if (editingProductId) {
       const { error } = await supabase.from("products").update(payload).eq("id", editingProductId);
@@ -515,19 +516,95 @@ const Admin = () => {
   };
 
   const exportOrdersCSV = () => {
-    const rows = [["Order ID", "Customer", "Email", "Phone", "Total", "Status", "Date", "Items"]];
+    const cols = ["Order ID (Full)", "Order ID (Short)", "Type", "Customer", "Email", "Phone", "Total", "Status", "Payment Status", "Payment Amount", "Date", "Delivery Date", "Delivery Address", "Size Preference", "Occasion", "Product Type", "Flavor", "Size/Qty", "Cake Message", "Special Request", "Food Allergy", "Notes", "Items"];
+    const escapeCSV = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const rows = [cols.map(escapeCSV).join(",")];
     filteredOrders.forEach(o => {
       const profile = profiles.find(p => p.user_id === o.user_id);
-      const name = o.guest_name || profile?.full_name || "—";
-      const email = o.guest_email || "—";
-      const phone = o.guest_phone || profile?.phone || "—";
-      const items = (orderItems[o.id] || []).map(i => `${i.product_name} x${i.quantity}`).join("; ");
-      rows.push([o.id.slice(0, 8), name, email, phone, String(o.total), o.status, new Date(o.created_at).toLocaleDateString(), items]);
+      const name = o.guest_name || profile?.full_name || "";
+      const email = o.guest_email || profile?.email || "";
+      const phone = o.guest_phone || profile?.phone || "";
+      const items = (orderItems[o.id] || []).map((i: any) => `${i.product_name} x${i.quantity} @₹${i.unit_price}`).join("; ");
+      const isOffline = (o.notes || "").includes("[Offline Order]");
+      const gn = (key: string) => (o.notes || "").match(new RegExp(`${key}: (.+)`))?.[1]?.trim() ?? "";
+      const cleanNotes = (o.notes || "")
+        .replace(/\[Offline Order\]\n?/, "").replace(/\[Reference Image\]\s*https?:\/\/\S+\n?/g, "")
+        .replace(/Occasion:.+\n?/g, "").replace(/Product Type:.+\n?/g, "").replace(/Flavor:.+\n?/g, "")
+        .replace(/Size\/Qty:.+\n?/g, "").replace(/Pincode:.+\n?/g, "").replace(/Cake Message:.+\n?/g, "")
+        .replace(/Special Request:.+\n?/g, "").replace(/Food Allergy:.+\n?/g, "").trim();
+      const paymentReceived = (o as any).payment_received;
+      const paymentAmount = paymentReceived ? String((o as any).payment_amount ?? o.total) : "";
+      rows.push([
+        o.id, o.id.slice(0, 8).toUpperCase(), isOffline ? "Offline" : "Online",
+        name, email, phone, String(o.total), o.status,
+        paymentReceived ? "Received" : "Pending", paymentAmount,
+        new Date(o.created_at).toLocaleString(), o.delivery_date || "",
+        o.delivery_address || "", (o as any).size_preference || "",
+        isOffline ? gn("Occasion") : "", isOffline ? gn("Product Type") : "",
+        isOffline ? gn("Flavor") : "", isOffline ? gn("Size/Qty") : "",
+        isOffline ? gn("Cake Message") : "", isOffline ? gn("Special Request") : "",
+        isOffline ? gn("Food Allergy") : "", cleanNotes, items,
+      ].map(escapeCSV).join(","));
     });
-    const csv = rows.map(r => r.join(",")).join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
+    const csv = rows.join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = "orders.csv"; a.click();
+  };
+
+  const exportUsersCSV = () => {
+    const escapeCSV = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const cols = ["User ID", "Full Name", "Email", "Phone", "Role", "Joined Date", "Total Orders", "Total Spent"];
+    const rows = [cols.map(escapeCSV).join(",")];
+    profiles.forEach(p => {
+      const role = userRoles.find(r => r.user_id === p.user_id && r.role === "admin") ? "Admin" : "Customer";
+      const userOrders = orders.filter(o => o.user_id === p.user_id);
+      const totalSpent = userOrders.reduce((s, o) => s + Number(o.total), 0);
+      rows.push([
+        p.user_id, p.full_name || "", p.email || "", p.phone || "",
+        role, new Date(p.created_at).toLocaleString(),
+        String(userOrders.length), String(totalSpent),
+      ].map(escapeCSV).join(","));
+    });
+    const csv = rows.join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "users.csv"; a.click();
+  };
+
+  // ── Feedback ───────────────────────────────────────────────────
+  const exportFeedbackCSV = () => {
+    const escapeCSV = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const cols = ["ID", "Name", "Email", "Phone", "Taste Rating", "Presentation Rating", "Service Rating", "Avg Rating", "Products Tried", "Comment", "Homepage Position", "Submitted At"];
+    const rows = [cols.map(escapeCSV).join(",")];
+    feedbacks.forEach((fb: any) => {
+      const avg = (((fb.taste_rating || 0) + (fb.presentation_rating || 0) + (fb.service_rating || 0)) / 3).toFixed(1);
+      rows.push([
+        fb.id, fb.name || "", fb.email || "", fb.phone || "",
+        String(fb.taste_rating ?? ""), String(fb.presentation_rating ?? ""), String(fb.service_rating ?? ""),
+        avg,
+        (fb.product_ids || []).join("; "),
+        fb.comment || "",
+        fb.display_position ? String(fb.display_position) : "",
+        new Date(fb.created_at).toLocaleString(),
+      ].map(escapeCSV).join(","));
+    });
+    const csv = rows.join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "feedback.csv"; a.click();
+  };
+
+  const setFeedbackPosition = async (fbId: string, position: number | null) => {
+    const { error } = await supabase.from("feedback" as any).update({ display_position: position } as any).eq("id", fbId);
+    if (error) { toast.error(`Failed to update position: ${error.message}`); return; }
+    setFeedbacks(prev => prev.map((fb: any) => {
+      // Clear the same position from any other card first
+      if (position !== null && fb.id !== fbId && fb.display_position === position) return { ...fb, display_position: null };
+      if (fb.id === fbId) return { ...fb, display_position: position };
+      return fb;
+    }));
+    toast.success(position ? `Pinned to homepage slot ${position}` : "Unpinned from homepage");
   };
 
   // ── Users ─────────────────────────────────────────────────────
@@ -912,7 +989,7 @@ const Admin = () => {
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
             <div className="flex justify-between items-center mb-4">
               <p className="font-body text-sm text-muted-foreground">{products.length} products</p>
-              <button type="button" onClick={() => { setEditingProductId(null); setProductForm(emptyProductForm); setImagePreview(null); setShowAddProduct(true); }}
+              <button type="button" onClick={() => { setEditingProductId(null); setProductForm(emptyProductForm); setShowAddProduct(true); }}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-body text-sm hover:opacity-90">
                 <Plus className="w-4 h-4" /> Add Product
               </button>
@@ -970,33 +1047,58 @@ const Admin = () => {
                   <button type="button" onClick={resetProductForm} className="p-2 rounded-lg hover:bg-secondary"><X className="w-4 h-4" /></button>
                 </div>
 
-                {/* Image Upload */}
+                {/* Multi-Media Upload */}
                 <div>
-                  <p className="font-body text-xs text-muted-foreground mb-2">Product Image</p>
-                  <div className="flex items-center gap-4">
-                    <div
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-24 h-24 rounded-xl border-2 border-dashed border-border flex items-center justify-center cursor-pointer hover:border-primary transition-colors overflow-hidden bg-secondary/30"
-                    >
-                      {imagePreview ? (
-                        <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="text-center">
-                          <ImageIcon className="w-6 h-6 text-muted-foreground mx-auto mb-1" />
-                          <span className="font-body text-[10px] text-muted-foreground">Upload</span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <button type="button" onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg font-body text-sm hover:bg-secondary">
-                        <Upload className="w-4 h-4" /> Choose Image
-                      </button>
-                      <p className="font-body text-xs text-muted-foreground mt-1">Max 2MB • JPG, PNG, WebP</p>
-                      {imageFile && <p className="font-body text-xs text-green-600 mt-1">✓ {imageFile.name}</p>}
-                    </div>
-                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageSelect} />
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="font-body text-xs font-medium text-foreground">Product Media</p>
+                    <p className="font-body text-[10px] text-muted-foreground">Up to 3 images, 1 video, 1 GIF</p>
                   </div>
+                  <div className="flex flex-wrap gap-3">
+                    {mediaItems.map((item, idx) => (
+                      <div key={idx} className="relative w-24 h-24 rounded-xl overflow-hidden border border-border bg-secondary/30 group">
+                        {item.type === "video" ? (
+                          <video src={item.preview || item.url} className="w-full h-full object-cover" muted />
+                        ) : (
+                          <img src={item.preview || item.url} alt="" className="w-full h-full object-cover" />
+                        )}
+                        <div className="absolute bottom-1 left-1 text-[9px] font-bold uppercase bg-black/60 text-white px-1.5 py-0.5 rounded-full">
+                          {item.type}
+                        </div>
+                        <button type="button"
+                          onClick={() => setMediaItems(prev => prev.filter((_, i) => i !== idx))}
+                          className="absolute top-1 right-1 p-1 bg-black/60 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                          <X className="w-3 h-3 text-white" />
+                        </button>
+                      </div>
+                    ))}
+                    {mediaItems.length < 5 && (
+                      <button type="button" onClick={() => mediaFileInputRef.current?.click()}
+                        className="w-24 h-24 rounded-xl border-2 border-dashed border-border flex flex-col items-center justify-center gap-1 hover:border-primary transition-colors bg-secondary/30 cursor-pointer">
+                        <Upload className="w-5 h-5 text-muted-foreground" />
+                        <span className="font-body text-[10px] text-muted-foreground">Add media</span>
+                      </button>
+                    )}
+                  </div>
+                  <p className="font-body text-[10px] text-muted-foreground mt-2">Images/GIFs (JPG, PNG, WebP, GIF) • Videos (MP4, WebM) • Max 15MB each</p>
+                  <input ref={mediaFileInputRef} type="file" accept="image/*,video/*" className="hidden"
+                    onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      if (file.size > 15 * 1024 * 1024) { toast.error("File must be under 15MB"); return; }
+                      const isVideo = file.type.startsWith("video/");
+                      const isGif = file.type === "image/gif" || file.name.toLowerCase().endsWith(".gif");
+                      const type: "image" | "video" | "gif" = isVideo ? "video" : isGif ? "gif" : "image";
+                      // Enforce limits
+                      const imgCount = mediaItems.filter(m => m.type === "image").length;
+                      const vidCount = mediaItems.filter(m => m.type === "video").length;
+                      const gifCount = mediaItems.filter(m => m.type === "gif").length;
+                      if (type === "image" && imgCount >= 3) { toast.error("Max 3 images allowed"); return; }
+                      if (type === "video" && vidCount >= 1) { toast.error("Max 1 video allowed"); return; }
+                      if (type === "gif" && gifCount >= 1) { toast.error("Max 1 GIF allowed"); return; }
+                      setMediaItems(prev => [...prev, { type, url: "", file, preview: URL.createObjectURL(file) }]);
+                      e.target.value = "";
+                    }}
+                  />
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
@@ -1429,12 +1531,22 @@ const Admin = () => {
                 <option value="oldest">Oldest First</option>
               </select>
               <button type="button" onClick={() => {
-                const rows = [["Name", "Email", "Phone", "Occasion", "Product Type", "Flavor", "Size", "Delivery Date", "Status", "Message"]];
+                const escapeCSV = (v: string) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+                const cols = ["ID", "Name", "Email", "Phone", "Occasion", "Product Type", "Flavor", "Size/Quantity", "Budget", "Delivery Date", "Status", "Message", "Address", "Submitted On", "Last Updated"];
+                const rows = [cols.map(escapeCSV).join(",")];
                 customOrders.forEach(co => {
-                  rows.push([co.name || "—", co.email || "—", co.phone || "—", co.occasion || "—", co.product_type || "—", co.flavor || "—", co.size_quantity || "—", co.delivery_date || "—", co.status, (co.message || "").replace(/,/g, " ")]);
+                  rows.push([
+                    co.id, co.name || "", co.email || "", co.phone || "",
+                    co.occasion || "", co.product_type || "", co.flavor || "",
+                    co.size_quantity || "", (co as any).budget || "",
+                    co.delivery_date || "", co.status, co.message || "",
+                    (co as any).address || "",
+                    new Date(co.created_at).toLocaleString(),
+                    new Date(co.updated_at).toLocaleString(),
+                  ].map(escapeCSV).join(","));
                 });
-                const csv = rows.map(r => r.join(",")).join("\n");
-                const blob = new Blob([csv], { type: "text/csv" });
+                const csv = rows.join("\n");
+                const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement("a"); a.href = url; a.download = "custom-orders.csv"; a.click();
               }} className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl font-body text-sm hover:bg-secondary">
@@ -1572,31 +1684,85 @@ const Admin = () => {
 
         {/* ── FEEDBACK TAB ── */}
         {!dataLoading && tab === "feedback" && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-3">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <p className="font-body text-sm text-muted-foreground">{feedbacks.length} feedback submissions</p>
+                <p className="font-body text-xs text-muted-foreground/70 mt-0.5">Pin up to 4 reviews to homepage slots 1–4</p>
+              </div>
+              <button type="button" onClick={exportFeedbackCSV}
+                className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl font-body text-sm hover:bg-secondary">
+                <Download className="w-4 h-4" /> Export CSV
+              </button>
+            </div>
+
+            {/* Homepage slot preview */}
+            <div className="grid grid-cols-4 gap-2">
+              {[1, 2, 3, 4].map(slot => {
+                const pinned = feedbacks.find((fb: any) => fb.display_position === slot);
+                return (
+                  <div key={slot} className={`rounded-xl p-3 border text-center ${pinned ? "bg-primary/5 border-primary/30" : "bg-secondary/20 border-border/50"}`}>
+                    <p className="font-body text-[10px] text-muted-foreground mb-1">Slot {slot}</p>
+                    <p className="font-body text-xs font-medium text-foreground truncate">{pinned ? pinned.name : "— dummy —"}</p>
+                  </div>
+                );
+              })}
+            </div>
+
             {feedbacks.length === 0 ? (
               <p className="text-center py-12 font-body text-sm text-muted-foreground">No feedback yet</p>
-            ) : feedbacks.map((fb: any) => (
-              <div key={fb.id} className="bg-card rounded-xl p-5 border border-border/50">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <p className="font-body text-sm font-medium text-foreground">{fb.name}</p>
-                    <p className="font-body text-xs text-muted-foreground">{fb.email}{fb.phone ? ` • ${fb.phone}` : ""}</p>
-                  </div>
-                  <span className="font-body text-xs text-muted-foreground">{new Date(fb.created_at).toLocaleDateString()}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-3 mb-3">
-                  {[{ label: "Taste", value: fb.taste_rating }, { label: "Presentation", value: fb.presentation_rating }, { label: "Service", value: fb.service_rating }].map(r => (
-                    <div key={r.label} className="bg-secondary/30 rounded-lg p-2 text-center">
-                      <p className="font-body text-[10px] text-muted-foreground mb-1">{r.label}</p>
-                      <div className="flex items-center justify-center gap-0.5">
-                        {[1, 2, 3, 4, 5].map(s => <Star key={s} className={`w-3 h-3 ${s <= r.value ? "fill-amber-400 text-amber-400" : "text-border"}`} />)}
-                      </div>
+            ) : feedbacks.map((fb: any) => {
+              const avg = (((fb.taste_rating || 0) + (fb.presentation_rating || 0) + (fb.service_rating || 0)) / 3).toFixed(1);
+              return (
+                <div key={fb.id} className="bg-card rounded-xl p-5 border border-border/50">
+                  <div className="flex justify-between items-start mb-3 gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-body text-sm font-medium text-foreground">{fb.name}</p>
+                      <p className="font-body text-xs text-muted-foreground truncate">{fb.email}{fb.phone ? ` • ${fb.phone}` : ""}</p>
                     </div>
-                  ))}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {/* Position picker */}
+                      <div className="flex items-center gap-1">
+                        <span className="font-body text-[10px] text-muted-foreground">Slot:</span>
+                        {[1, 2, 3, 4].map(slot => (
+                          <button
+                            key={slot}
+                            type="button"
+                            onClick={() => setFeedbackPosition(fb.id, fb.display_position === slot ? null : slot)}
+                            className={`w-6 h-6 rounded-full font-body text-[10px] font-bold transition-colors ${
+                              fb.display_position === slot
+                                ? "bg-primary text-primary-foreground"
+                                : "bg-secondary text-muted-foreground hover:bg-primary/20"
+                            }`}
+                          >
+                            {slot}
+                          </button>
+                        ))}
+                      </div>
+                      <span className="font-body text-xs text-muted-foreground">{new Date(fb.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    {[{ label: "Taste", value: fb.taste_rating }, { label: "Presentation", value: fb.presentation_rating }, { label: "Service", value: fb.service_rating }].map(r => (
+                      <div key={r.label} className="bg-secondary/30 rounded-lg p-2 text-center">
+                        <p className="font-body text-[10px] text-muted-foreground mb-1">{r.label}</p>
+                        <div className="flex items-center justify-center gap-0.5">
+                          {[1, 2, 3, 4, 5].map(s => <Star key={s} className={`w-3 h-3 ${s <= r.value ? "fill-amber-400 text-amber-400" : "text-border"}`} />)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    {fb.comment
+                      ? <p className="font-body text-xs text-foreground flex-1">"{fb.comment}"</p>
+                      : <span className="flex-1" />
+                    }
+                    <span className="font-body text-xs font-semibold text-primary shrink-0">avg {avg} ★</span>
+                  </div>
                 </div>
-                {fb.comment && <p className="font-body text-xs text-foreground">"{fb.comment}"</p>}
-              </div>
-            ))}
+              );
+            })}
           </motion.div>
         )}
 
@@ -1612,6 +1778,10 @@ const Admin = () => {
                   onChange={e => setUserSearch(e.target.value)}
                   className="w-full pl-9 pr-4 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />
               </div>
+              <button type="button" onClick={exportUsersCSV}
+                className="flex items-center gap-2 px-4 py-2.5 border border-border rounded-xl font-body text-sm hover:bg-secondary">
+                <Download className="w-4 h-4" /> Export CSV
+              </button>
               <button type="button" onClick={() => setShowAddUser(v => !v)}
                 className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl font-body text-sm hover:opacity-90">
                 <Plus className="w-4 h-4" /> Add User

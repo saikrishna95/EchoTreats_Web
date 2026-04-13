@@ -25,6 +25,7 @@ const FeedbackModal = ({ open, onClose }: FeedbackModalProps) => {
     name: "",
     email: "",
     phone: "",
+    location: "",
     taste_rating: 0,
     presentation_rating: 0,
     service_rating: 0,
@@ -55,8 +56,8 @@ const FeedbackModal = ({ open, onClose }: FeedbackModalProps) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name || !form.email || !form.phone) {
-      toast.error("Please fill in name, email and phone");
+    if (!form.name || !form.email) {
+      toast.error("Please fill in your name and email");
       return;
     }
     if (!form.taste_rating || !form.presentation_rating || !form.service_rating) {
@@ -73,6 +74,7 @@ const FeedbackModal = ({ open, onClose }: FeedbackModalProps) => {
       name: form.name,
       email: form.email,
       phone: form.phone || null,
+      location: form.location.trim() || null,
       taste_rating: form.taste_rating,
       presentation_rating: form.presentation_rating,
       service_rating: form.service_rating,
@@ -87,7 +89,7 @@ const FeedbackModal = ({ open, onClose }: FeedbackModalProps) => {
     }
 
     toast.success("Thank you for your feedback!");
-    setForm({ name: "", email: "", phone: "", taste_rating: 0, presentation_rating: 0, service_rating: 0, product_ids: [], comment: "" });
+    setForm({ name: "", email: "", phone: "", location: "", taste_rating: 0, presentation_rating: 0, service_rating: 0, product_ids: [], comment: "" });
     setLoading(false);
     onClose();
   };
@@ -124,7 +126,10 @@ const FeedbackModal = ({ open, onClose }: FeedbackModalProps) => {
                 <input type="text" placeholder="Name *" value={form.name} onChange={e => update("name", e.target.value)} className={inputCls} required />
                 <input type="email" placeholder="Email *" value={form.email} onChange={e => update("email", e.target.value)} className={inputCls} required />
               </div>
-              <input type="tel" placeholder="Phone *" value={form.phone} onChange={e => update("phone", e.target.value)} className={inputCls} required />
+              <div className="grid grid-cols-2 gap-4">
+                <input type="tel" placeholder="Phone (optional)" value={form.phone} onChange={e => update("phone", e.target.value)} className={inputCls} />
+                <input type="text" placeholder="Location (e.g. Hyderabad)" value={form.location} onChange={e => update("location", e.target.value)} className={inputCls} maxLength={60} />
+              </div>
 
               {/* Rating questions */}
               <div className="space-y-3">

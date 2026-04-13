@@ -1,17 +1,74 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Star, MessageCircle } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import FeedbackModal from "./FeedbackModal";
 
-const reviews = [
+const DUMMY_BASE_COUNT = 217;
+
+const dummyReviews = [
   { name: "@sweet.tooth", text: "Amazing cupcakes! The flavors are incredible and so beautifully decorated.", rating: 4.8 },
   { name: "@yum.mummy", text: "Delicious cakes! Thank you for making my daughter's birthday so special.", rating: 5 },
   { name: "@foodie.hyd", text: "Best cookies in town. The packaging is so premium and thoughtful.", rating: 4.9 },
   { name: "@cake.lover", text: "Ordered a custom wedding cake — absolutely stunning. Everyone loved it!", rating: 5 },
 ];
 
+interface DisplayReview {
+  name: string;
+  location: string | null;
+  text: string;
+  rating: number;
+  isDummy: boolean;
+}
+
+const formatReviewerLabel = (name: string, location: string | null) => {
+  const cleanName = name.trim().replace(/^@+/, "") || "Customer";
+  const cleanLocation = location?.trim();
+
+  return cleanLocation ? `@${cleanName}, ${cleanLocation}` : `@${cleanName}`;
+};
+
 const ReviewsSection = () => {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [displayReviews, setDisplayReviews] = useState<DisplayReview[]>(
+    dummyReviews.map(r => ({ ...r, location: null, isDummy: true }))
+  );
+  const [totalCount, setTotalCount] = useState(DUMMY_BASE_COUNT);
+
+  useEffect(() => {
+    const load = async () => {
+      const { data, error } = await supabase
+        .from("feedback" as any)
+        .select("*")
+        .order("display_position", { ascending: true, nullsFirst: false });
+
+      if (error || !data || data.length === 0) return;
+
+      setTotalCount(DUMMY_BASE_COUNT + data.length);
+
+      // Build 4 slots: pinned real feedback first, dummy fills the rest
+      const slots: DisplayReview[] = [...dummyReviews.map(r => ({ ...r, location: null, isDummy: true }))];
+
+      // Place pinned feedback into their assigned slots
+      (data as any[])
+        .filter(fb => fb.display_position >= 1 && fb.display_position <= 4)
+        .forEach(fb => {
+          const avgRating = ((fb.taste_rating || 0) + (fb.presentation_rating || 0) + (fb.service_rating || 0)) / 3;
+          slots[fb.display_position - 1] = {
+            name: fb.name || fb.public_name || "Customer",
+            location: fb.location || null,
+            text: fb.comment || "Great experience!",
+            rating: Math.round(avgRating * 10) / 10,
+            isDummy: false,
+          };
+        });
+
+      setDisplayReviews(slots);
+    };
+
+    load();
+  }, []);
+
   return (
     <section id="reviews" className="py-16 md:py-20">
       <div className="container">
@@ -26,12 +83,12 @@ const ReviewsSection = () => {
               <Star key={i} className="w-5 h-5 fill-gold text-gold" />
             ))}
           </div>
-          <p className="font-body text-sm font-semibold text-foreground mb-1">217 reviews</p>
+          <p className="font-body text-sm font-semibold text-foreground mb-1">{totalCount} reviews</p>
           <h2 className="font-heading text-3xl md:text-4xl font-semibold text-foreground">What Our Customers Say</h2>
         </motion.div>
 
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {reviews.map((review, i) => (
+          {displayReviews.map((review, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, y: 15 }}
@@ -47,7 +104,9 @@ const ReviewsSection = () => {
                 <span className="text-xs font-body font-medium text-muted-foreground ml-1">{review.rating}</span>
               </div>
               <p className="font-body text-sm text-foreground mb-3 line-clamp-3">"{review.text}"</p>
-              <p className="font-body text-xs text-muted-foreground font-medium">{review.name}</p>
+              <p className="font-body text-xs text-muted-foreground font-medium">
+                {formatReviewerLabel(review.name, review.location)}
+              </p>
             </motion.div>
           ))}
         </div>
