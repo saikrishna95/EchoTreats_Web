@@ -11,4 +11,5 @@ export const mapDbProduct = (p: ProductRow): Product => ({
   image: p.image_url || "/placeholder.svg",
   tags: p.tags || [],
   mediaUrls: ((p as any).media_urls as { type: "image" | "video" | "gif"; url: string }[] | null) || undefined,
+  isAvailable: p.is_available,
 });

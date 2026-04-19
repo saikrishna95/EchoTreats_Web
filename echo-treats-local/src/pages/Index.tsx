@@ -7,6 +7,7 @@ import HeroSection from "@/components/HeroSection";
 import ProductSection from "@/components/ProductSection";
 import OccasionSection from "@/components/OccasionSection";
 import WhatsNewSection from "@/components/WhatsNewSection";
+import GiftSection from "@/components/GiftSection";
 import CustomOrderSection from "@/components/CustomOrderSection";
 import ReviewsSection from "@/components/ReviewsSection";
 import InstagramSection from "@/components/InstagramSection";
@@ -24,7 +25,7 @@ const Index = () => {
   const [menuOpen, setMenuOpen] = useState(false);
   const [heroVisible, setHeroVisible] = useState(true);
 
-  const { getProductsByCategory, loading } = useProducts();
+  const { getProductsByCategory, getFeaturedSlotsByCategory, loading } = useProducts();
 
   useEffect(() => {
     const hash = window.location.hash;
@@ -120,6 +121,8 @@ const Index = () => {
     return () => observer.disconnect();
   }, []);
 
+  // rawProducts = full category list (used by modal click handler)
+  // featured = up to 6 admin-selected (or first 6 by sort_order) for home display
   const cakesRaw = getProductsByCategory("cakes");
   const cupcakesRaw = getProductsByCategory("cupcakes");
   const cookiesRaw = getProductsByCategory("cookies");
@@ -128,13 +131,13 @@ const Index = () => {
   const tubsRaw = getProductsByCategory("tubs");
   const browniesRaw = getProductsByCategory("brownies");
 
-  const cakes = cakesRaw.map(mapDbProduct);
-  const cupcakes = cupcakesRaw.slice(0, 4).map(mapDbProduct);
-  const cookies = cookiesRaw.map(mapDbProduct);
-  const chocolates = chocolatesRaw.map(mapDbProduct);
-  const cheesecakes = cheesecakesRaw.map(mapDbProduct);
-  const tubs = tubsRaw.map(mapDbProduct);
-  const brownies = browniesRaw.map(mapDbProduct);
+  const cakes = getFeaturedSlotsByCategory("cakes").map(mapDbProduct);
+  const cupcakes = getFeaturedSlotsByCategory("cupcakes").map(mapDbProduct);
+  const cookies = getFeaturedSlotsByCategory("cookies").map(mapDbProduct);
+  const chocolates = getFeaturedSlotsByCategory("chocolates").map(mapDbProduct);
+  const cheesecakes = getFeaturedSlotsByCategory("cheesecakes").map(mapDbProduct);
+  const tubs = getFeaturedSlotsByCategory("tubs").map(mapDbProduct);
+  const brownies = getFeaturedSlotsByCategory("brownies").map(mapDbProduct);
 
   return (
     <div
@@ -231,6 +234,7 @@ const Index = () => {
 
         <WhatsNewSection />
         <OccasionSection />
+        <GiftSection />
         <CustomOrderSection />
         <ReviewsSection />
         <InstagramSection />

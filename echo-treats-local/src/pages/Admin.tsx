@@ -22,6 +22,13 @@ const emptyProductForm = {
   tags: "", image_url: "", is_featured: false, occasion: "", is_available: true,
 };
 
+const formatLakh = (n: number) => {
+  if (n >= 1000000) return `${(n / 100000).toFixed(1)}L`;
+  if (n >= 100000) return `${(n / 100000).toFixed(1)}L`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+  return n.toLocaleString();
+};
+
 const STATUS_COLORS: Record<string, string> = {
   pending: "bg-amber-100 text-amber-700",
   confirmed: "bg-blue-100 text-blue-700",
@@ -40,7 +47,7 @@ const Admin = () => {
   const navigate = useNavigate();
   const { tab: tabParam } = useParams();
 
-  const tab = (tabParam || "orders") as "products" | "orders" | "custom" | "feedback" | "analytics" | "users" | "categories" | "store" | "banners" | "instagram";
+  const tab = (tabParam || "orders") as "products" | "orders" | "custom" | "feedback" | "analytics" | "users" | "categories" | "store" | "banners" | "instagram" | "profitability";
   const setTab = (t: string) => navigate(`/admin/${t}`, { replace: true });
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -53,6 +60,17 @@ const Admin = () => {
 
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+
+  // Notification dismiss tracking — stored in localStorage
+  const NOTIF_KEY = "admin_notif_seen";
+  const getSeenCounts = (): { orders?: number; custom?: number; feedbacks?: number } => {
+    try { return JSON.parse(localStorage.getItem(NOTIF_KEY) || "{}"); } catch { return {}; }
+  };
+  const [seenCounts, setSeenCounts] = useState<{ orders?: number; custom?: number; feedbacks?: number }>(getSeenCounts);
+  const [profitPeriod, setProfitPeriod] = useState<"week" | "month" | "quarter" | "year">("year");
+  const [categoryDrilldown, setCategoryDrilldown] = useState<string | null>(null);
+  const [profitTabPeriod, setProfitTabPeriod] = useState<"week" | "month" | "quarter" | "year">("month");
+  const [profitTabDrilldown, setProfitTabDrilldown] = useState<string | null>(null);
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [productForm, setProductForm] = useState(emptyProductForm);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -124,6 +142,11 @@ const Admin = () => {
   const [instaUploading, setInstaUploading] = useState<number | null>(null);
   const instaFileRefs = useRef<(HTMLInputElement | null)[]>([]);
 
+  // Products tab — category-first view
+  const [adminProductsView, setAdminProductsView] = useState<"categories" | "list">("categories");
+  // Featured home slots: categoryId -> array of 6 product IDs (null = empty slot)
+  const [featuredSlotsMap, setFeaturedSlotsMap] = useState<Record<string, (string | null)[]>>({});
+
   useEffect(() => {
     if (!authLoading && (!user || !isAdmin)) { navigate("/"); return; }
     void fetchAll();
@@ -162,23 +185,24 @@ const Admin = () => {
       if (ur.data) setUserRoles(ur.data);
       if (an.data) setAnnouncements(an.data as any[]);
 
-      // Visit stats
-      const now = new Date();
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
-      const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-      const [vTotal, vToday, vWeek, vMonth] = await Promise.all([
+      // Visit stats — fire in background, don't block main data load
+      const now2 = new Date();
+      const todayStart = new Date(now2.getFullYear(), now2.getMonth(), now2.getDate()).toISOString();
+      const weekStart = new Date(now2.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const monthStart = new Date(now2.getFullYear(), now2.getMonth(), 1).toISOString();
+      Promise.all([
         (supabase.from("site_visits" as any) as any).select("id", { count: "exact", head: true }),
         (supabase.from("site_visits" as any) as any).select("id", { count: "exact", head: true }).gte("visited_at", todayStart),
         (supabase.from("site_visits" as any) as any).select("id", { count: "exact", head: true }).gte("visited_at", weekStart),
         (supabase.from("site_visits" as any) as any).select("id", { count: "exact", head: true }).gte("visited_at", monthStart),
-      ]);
-      setVisitStats({
-        total: vTotal.count ?? 0,
-        today: vToday.count ?? 0,
-        thisWeek: vWeek.count ?? 0,
-        thisMonth: vMonth.count ?? 0,
-      });
+      ]).then(([vTotal, vToday, vWeek, vMonth]) => {
+        setVisitStats({
+          total: vTotal.count ?? 0,
+          today: vToday.count ?? 0,
+          thisWeek: vWeek.count ?? 0,
+          thisMonth: vMonth.count ?? 0,
+        });
+      }).catch(() => {});
       if (ig.data) {
         const filled = Array.from({ length: 5 }, (_, i) => {
           const existing = (ig.data as any[]).find(r => r.sort_order === i + 1);
@@ -188,6 +212,19 @@ const Admin = () => {
         });
         setInstaPosts(filled);
       }
+
+      // Load featured home slots in background (table may not exist yet)
+      (supabase.from("category_home_slots" as any) as any).select("*").order("slot_position").then((slotsRes: any) => {
+        if (slotsRes.data) {
+          const map: Record<string, (string | null)[]> = {};
+          (slotsRes.data as any[]).forEach((slot: any) => {
+            if (!map[slot.category_id]) map[slot.category_id] = Array(6).fill(null);
+            const idx = slot.slot_position - 1;
+            if (idx >= 0 && idx < 6) map[slot.category_id][idx] = slot.product_id;
+          });
+          setFeaturedSlotsMap(map);
+        }
+      }).catch(() => {});
     } catch (err) {
       toast.error("Failed to load admin data. Please refresh.");
     } finally {
@@ -195,6 +232,29 @@ const Admin = () => {
     }
   };
 
+
+  // ── Featured Home Slots ───────────────────────────────────────
+  const saveFeaturedSlot = async (categoryId: string, slotPos: number, productId: string | null) => {
+    try {
+      if (productId) {
+        await (supabase.from("category_home_slots" as any) as any).upsert(
+          { category_id: categoryId, slot_position: slotPos, product_id: productId },
+          { onConflict: "category_id,slot_position" }
+        );
+      } else {
+        await (supabase.from("category_home_slots" as any) as any)
+          .delete().eq("category_id", categoryId).eq("slot_position", slotPos);
+      }
+      setFeaturedSlotsMap(prev => {
+        const catSlots = [...(prev[categoryId] || Array(6).fill(null))];
+        catSlots[slotPos - 1] = productId;
+        return { ...prev, [categoryId]: catSlots };
+      });
+      toast.success(`Slot ${slotPos} updated`);
+    } catch {
+      toast.error("Failed to update slot — ensure the category_home_slots table exists in Supabase.");
+    }
+  };
 
   // ── Products ──────────────────────────────────────────────────
   const resetProductForm = () => {
@@ -711,6 +771,17 @@ const Admin = () => {
   const pendingOrders = orders.filter(o => o.status === "pending").length;
   const pendingCustom = customOrders.filter(co => co.status === "pending").length;
   const totalNotifications = pendingOrders + pendingCustom + feedbacks.length;
+  // Only show badge for counts that exceed what was last "seen"
+  const unseenOrders = Math.max(0, pendingOrders - (seenCounts.orders ?? 0));
+  const unseenCustom = Math.max(0, pendingCustom - (seenCounts.custom ?? 0));
+  const unseenFeedbacks = Math.max(0, feedbacks.length - (seenCounts.feedbacks ?? 0));
+  const unseenCount = unseenOrders + unseenCustom + unseenFeedbacks;
+
+  const dismissNotifications = () => {
+    const seen = { orders: pendingOrders, custom: pendingCustom, feedbacks: feedbacks.length };
+    localStorage.setItem(NOTIF_KEY, JSON.stringify(seen));
+    setSeenCounts(seen);
+  };
 
   // Avg fulfillment days (created → delivered, using updated_at as proxy)
   const fulfillmentDays = deliveredOrders.map(o => {
@@ -767,8 +838,536 @@ const Admin = () => {
 
     const profit = revenueWithCp - totalCost;
     const margin = revenueWithCp > 0 ? (profit / revenueWithCp) * 100 : null;
-    return { name: cat.name, revenue, revenueWithCp, totalCost, profit, margin, unitsSold, hasCp: revenueWithCp > 0 };
+
+    // Product-level SP/CP averages for display even if no orders yet
+    const productsWithCp = catProducts.filter(p => (p as any).cost_price != null);
+    const avgSp = catProducts.length > 0 ? catProducts.reduce((s, p) => s + Number(p.price), 0) / catProducts.length : null;
+    const avgCp = productsWithCp.length > 0 ? productsWithCp.reduce((s, p) => s + Number((p as any).cost_price), 0) / productsWithCp.length : null;
+    const avgMargin = avgSp && avgCp && avgSp > 0 ? ((avgSp - avgCp) / avgSp) * 100 : null;
+
+    return {
+      name: cat.name,
+      revenue, revenueWithCp, totalCost, profit, margin, unitsSold,
+      hasCp: revenueWithCp > 0,
+      productCount: catProducts.length,
+      avgSp, avgCp, avgMargin,
+      hasProductCp: productsWithCp.length > 0,
+    };
+  }).filter(c => c.productCount > 0).sort((a, b) => b.revenue - a.revenue);
+
+  // ── Period-filtered Profitability ──────────────────────────────
+  const profitPeriodStart = (() => {
+    const n = new Date();
+    if (profitPeriod === "week") { const d = new Date(n); d.setDate(d.getDate() - 7); return d; }
+    if (profitPeriod === "month") return new Date(n.getFullYear(), n.getMonth(), 1);
+    if (profitPeriod === "quarter") { const d = new Date(n); d.setMonth(d.getMonth() - 3); return d; }
+    return new Date(n.getFullYear(), 0, 1);
+  })();
+  const profitPrevStart = (() => {
+    const n = new Date();
+    if (profitPeriod === "week") { const d = new Date(n); d.setDate(d.getDate() - 14); return d; }
+    if (profitPeriod === "month") return new Date(n.getFullYear(), n.getMonth() - 1, 1);
+    if (profitPeriod === "quarter") { const d = new Date(n); d.setMonth(d.getMonth() - 6); return d; }
+    return new Date(n.getFullYear() - 1, 0, 1);
+  })();
+  const profitPrevEnd = (() => {
+    const n = new Date();
+    if (profitPeriod === "week") { const d = new Date(n); d.setDate(d.getDate() - 7); return d; }
+    if (profitPeriod === "month") return new Date(n.getFullYear(), n.getMonth(), 1);
+    if (profitPeriod === "quarter") { const d = new Date(n); d.setMonth(d.getMonth() - 3); return d; }
+    return new Date(n.getFullYear(), 0, 1);
+  })();
+  const periodDelivered = deliveredOrders.filter(o => new Date(o.created_at) >= profitPeriodStart);
+  const prevPeriodDelivered = deliveredOrders.filter(o => {
+    const d = new Date(o.created_at);
+    return d >= profitPrevStart && d < profitPrevEnd;
+  });
+  const calcPeriodStats = (ords: Order[]) => {
+    let sp = 0, cp = 0, hasCp = false;
+    ords.forEach(o => {
+      sp += Number((o as any).payment_amount ?? o.total);
+      const items = (orderItems[o.id] || []) as any[];
+      let itemsCp = 0; let allHave = items.length > 0;
+      items.forEach((item: any) => {
+        const prod = products.find(p => p.id === item.product_id);
+        const c = prod && (prod as any).cost_price != null ? Number((prod as any).cost_price) : null;
+        if (c != null) itemsCp += c * item.quantity; else allHave = false;
+      });
+      if (allHave && items.length > 0) { cp += itemsCp; hasCp = true; }
+      else if ((o as any).cost_price != null) { cp += Number((o as any).cost_price); hasCp = true; }
+    });
+    const profit = sp - cp;
+    const margin = hasCp && sp > 0 ? (profit / sp) * 100 : null;
+    return { sp, cp, profit, margin, hasCp };
+  };
+  const periodStats = calcPeriodStats(periodDelivered);
+  const prevStats = calcPeriodStats(prevPeriodDelivered);
+  const pctChange = (cur: number, prev: number) => prev > 0 ? ((cur - prev) / prev) * 100 : null;
+  const spChange = pctChange(periodStats.sp, prevStats.sp);
+  const cpChange = pctChange(periodStats.cp, prevStats.cp);
+  const profitChange = pctChange(periodStats.profit, prevStats.profit);
+  const periodCategoryStats = categories.map(cat => {
+    const catProds = products.filter(p => p.category_id === cat.id);
+    const catProdIds = catProds.map(p => p.id);
+    const cpMapCat: Record<string, number | null> = {};
+    catProds.forEach(p => { cpMapCat[p.id] = (p as any).cost_price != null ? Number((p as any).cost_price) : null; });
+    let catRev = 0, catCost = 0, catUnits = 0; let catHasCp = false;
+    const ordSet = new Set<string>();
+    periodDelivered.forEach(o => {
+      (orderItems[o.id] || []).forEach((item: any) => {
+        if (!catProdIds.includes(item.product_id)) return;
+        catRev += Number(item.unit_price) * item.quantity;
+        catUnits += item.quantity;
+        ordSet.add(o.id);
+        if (cpMapCat[item.product_id] != null) { catCost += cpMapCat[item.product_id]! * item.quantity; catHasCp = true; }
+      });
+    });
+    const catProfit = catRev - catCost;
+    const catMargin = catHasCp && catRev > 0 ? (catProfit / catRev) * 100 : null;
+    return { id: cat.id, name: cat.name, revenue: catRev, cost: catCost, profit: catProfit, margin: catMargin, unitsSold: catUnits, hasCp: catHasCp, orderCount: ordSet.size, catProds, cpMapCat };
   }).filter(c => c.revenue > 0).sort((a, b) => b.revenue - a.revenue);
+  const drilldownCat = periodCategoryStats.find(c => c.name === categoryDrilldown);
+  const drilldownProducts = drilldownCat ? drilldownCat.catProds.map(prod => {
+    let dUnits = 0, dSp = 0, dCp = 0;
+    const hasCp = (prod as any).cost_price != null;
+    periodDelivered.forEach(o => {
+      (orderItems[o.id] || []).forEach((item: any) => {
+        if (item.product_id !== prod.id) return;
+        dUnits += item.quantity;
+        dSp += Number(item.unit_price) * item.quantity;
+        if (hasCp) dCp += Number((prod as any).cost_price) * item.quantity;
+      });
+    });
+    const dProfit = dSp - dCp;
+    const dMargin = hasCp && dSp > 0 ? (dProfit / dSp) * 100 : null;
+    return { name: prod.name, unitSp: Number(prod.price), unitCp: hasCp ? Number((prod as any).cost_price) : null, unitsSold: dUnits, totalSp: dSp, totalCp: hasCp ? dCp : null, profit: hasCp ? dProfit : null, margin: dMargin };
+  }).filter(p => p.unitsSold > 0).sort((a, b) => b.unitsSold - a.unitsSold) : [];
+
+  // ── Profitability Tab ─────────────────────────────────────────────────────
+  // SP = order_items.unit_price × quantity (never products.price)
+  // CP = orders.cost_price (order-level; distributed proportionally to items by SP share)
+  const productById = new Map(products.map(p => [p.id, p]));
+  const categoryById = new Map(categories.map(c => [c.id, c]));
+
+  const getProfitPeriodRange = (period: "week" | "month" | "quarter" | "year", offset = 0) => {
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    if (period === "week") {
+      const start = new Date(now);
+      const day = start.getDay();
+      start.setDate(start.getDate() - (day === 0 ? 6 : day - 1) + offset * 7);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 7);
+      return { start, end };
+    }
+    if (period === "month") {
+      const start = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      const end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+      return { start, end };
+    }
+    if (period === "quarter") {
+      const start = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3 + offset * 3, 1);
+      const end = new Date(start.getFullYear(), start.getMonth() + 3, 1);
+      return { start, end };
+    }
+    const start = new Date(now.getFullYear() + offset, 0, 1);
+    const end = new Date(start.getFullYear() + 1, 0, 1);
+    return { start, end };
+  };
+
+  const profitTabRange = getProfitPeriodRange(profitTabPeriod);
+  const profitTabPrevRange = getProfitPeriodRange(profitTabPeriod, -1);
+  const profitBaseOrders = deliveredOrders;
+
+  const normalizeProfitText = (value: string) =>
+    value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+  const getProfitMetaValue = (o: Order, key: string) =>
+    (o.notes || "").match(new RegExp(`${key}: (.+)`, "i"))?.[1]?.trim() || "";
+
+  const getProfitNoteLines = (o: Order) =>
+    (o.notes || "").split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+
+  // Guess category from item name + order notes when no product_id link exists (offline orders)
+  const guessCategory = (itemName: string, notes: string): string => {
+    const text = `${itemName} ${notes}`.toLowerCase();
+    let bestId = "__custom__";
+    let bestScore = 0;
+    for (const cat of categories) {
+      const catWords = `${cat.name} ${cat.slug}`.toLowerCase().split(/[\s\-&,]+/).filter(w => w.length > 2);
+      let score = 0;
+      for (const cw of catWords) {
+        if (text.includes(cw)) { score += cw.length; continue; }
+        for (const tw of text.split(/\s+/)) {
+          if (tw.length > 2 && (cw.startsWith(tw) || tw.startsWith(cw))) score += Math.min(cw.length, tw.length) * 0.6;
+        }
+      }
+      if (score > bestScore) { bestScore = score; bestId = cat.id; }
+    }
+    return bestScore >= 3 ? bestId : "__custom__";
+  };
+
+  const matchProductByText = (...texts: Array<string | null | undefined>): Product | null => {
+    let best: Product | null = null;
+    let bestScore = 0;
+    const normalizedTexts = texts.map(text => normalizeProfitText(text || "")).filter(Boolean);
+
+    normalizedTexts.forEach(text => {
+      products.forEach(prod => {
+        if (!prod.category_id) return;
+        const prodName = normalizeProfitText(prod.name || "");
+        if (!prodName) return;
+
+        let score = 0;
+        if (text === prodName) score = 1000 + prodName.length;
+        else if (text.includes(prodName)) score = 600 + prodName.length;
+        else if (prodName.includes(text) && text.length >= 4) score = 300 + text.length;
+        else {
+          const prodWords = prodName.split(" ").filter(w => w.length > 2);
+          const textWords = text.split(" ").filter(w => w.length > 2);
+          const shared = prodWords.filter(word => textWords.includes(word)).length;
+          if (shared > 0) score = shared * 25 + prodName.length;
+        }
+
+        if (score > bestScore) {
+          best = prod;
+          bestScore = score;
+        }
+      });
+    });
+
+    return best;
+  };
+
+  const getOrderFallbackTexts = (o: Order) => {
+    const lines = getProfitNoteLines(o);
+    const firstMeaningfulLine = lines.find(line =>
+      !/^\[.*\]$/.test(line) &&
+      !/^(Occasion|Product Type|Flavor|Size\/Qty|Pincode|Cake Message|Special Request|Food Allergy):/i.test(line)
+    );
+
+    return [
+      getProfitMetaValue(o, "Product Type"),
+      firstMeaningfulLine,
+      lines[0] || "",
+      o.notes || "",
+    ].filter(Boolean) as string[];
+  };
+
+  const resolveCategoryForOrderText = (text: string, o: Order) => {
+    const matchedProduct = matchProductByText(text, ...getOrderFallbackTexts(o));
+    const categoryId = matchedProduct?.category_id ?? guessCategory(text, o.notes || "");
+    const categoryName = categoryById.get(categoryId)?.name
+      ?? (categoryId === "__custom__" ? "Other / Custom" : "Unknown");
+    return { categoryId, categoryName, matchedProduct };
+  };
+
+  const getOrderSp = (o: Order): number => {
+    const paymentAmount = (o as any).payment_amount;
+    if ((o as any).payment_received === true && paymentAmount != null) {
+      return Number(paymentAmount) || 0;
+    }
+    return Number(o.total || 0);
+  };
+
+  const getOrderCp = (o: Order): number | null => {
+    const value = (o as any).cost_price;
+    if (value == null) return null;
+    const num = Number(value);
+    return num > 0 ? num : null;
+  };
+
+  const getProfitItemCp = (orderId: string, itemSp: number): number | null => {
+    const ord = orders.find(o => o.id === orderId);
+    const orderCp = ord ? getOrderCp(ord) : null;
+    if (orderCp == null) return null;
+    const items = (orderItems[orderId] || []) as any[];
+    const orderTotalSp = items.reduce((sum: number, item: any) => (
+      sum + Number(item.unit_price || 0) * (Number(item.quantity) || 0)
+    ), 0);
+    if (orderTotalSp <= 0) return orderCp;
+    return orderCp * (itemSp / orderTotalSp);
+  };
+
+  const profitPeriodOrders = profitBaseOrders.filter(o => {
+    const createdAt = new Date(o.created_at);
+    return createdAt >= profitTabRange.start && createdAt < profitTabRange.end;
+  });
+  const profitPrevOrders = profitBaseOrders.filter(o => {
+    const createdAt = new Date(o.created_at);
+    return createdAt >= profitTabPrevRange.start && createdAt < profitTabPrevRange.end;
+  });
+
+  const profitAnyCp = profitBaseOrders.some(o => getOrderCp(o) != null);
+
+  const calcProfitKpi = (ords: Order[]) => {
+    let totalSp = 0;
+    let spWithCp = 0;
+    let totalCp = 0;
+    ords.forEach(o => {
+      const orderSp = getOrderSp(o);
+      totalSp += orderSp;
+      const orderCp = getOrderCp(o);
+      if (orderCp != null) {
+        spWithCp += orderSp;
+        totalCp += orderCp;
+      }
+    });
+    const profit = spWithCp - totalCp;
+    const margin = spWithCp > 0 ? (profit / spWithCp) * 100 : null;
+    return { totalSp, spWithCp, totalCp, profit, margin, hasCp: spWithCp > 0 };
+  };
+  const profitTabStats = calcProfitKpi(profitPeriodOrders);
+  const profitTabPrevStats = calcProfitKpi(profitPrevOrders);
+  const profitTabPct = (cur: number, prev: number) => prev > 0 ? ((cur - prev) / prev) * 100 : null;
+  const profitTabSpChg = profitTabPct(profitTabStats.totalSp, profitTabPrevStats.totalSp);
+  const profitTabCpChg = profitTabPct(profitTabStats.totalCp, profitTabPrevStats.totalCp);
+  const profitTabProfitChg = profitTabPct(profitTabStats.profit,  profitTabPrevStats.profit);
+
+  // Category stats — built bottom-up from order items
+  type ProfitCatEntry = {
+    id: string; name: string; revenue: number; spWithCp: number; cost: number;
+    hasCp: boolean; ordSet: Set<string>;
+  };
+  type ProfitSlice = {
+    orderId: string;
+    categoryId: string;
+    categoryName: string;
+    label: string;
+    qtyLabel: string;
+    revenue: number;
+    cost: number | null;
+    customer: string;
+    createdAt: string;
+  };
+  const profitPeriodSlices: ProfitSlice[] = profitPeriodOrders.flatMap(o => {
+    const items = (orderItems[o.id] || []) as any[];
+    const orderSp = getOrderSp(o);
+    const orderCp = getOrderCp(o);
+    const customer = o.guest_name || "Guest";
+
+    if (items.length === 0) {
+      const fallbackTexts = getOrderFallbackTexts(o);
+      const displayLabel = matchProductByText(...fallbackTexts)?.name
+        || getProfitMetaValue(o, "Product Type")
+        || fallbackTexts[0]
+        || "Custom item";
+      const resolved = resolveCategoryForOrderText(displayLabel, o);
+      return [{
+        orderId: o.id,
+        categoryId: resolved.categoryId,
+        categoryName: resolved.categoryName,
+        label: resolved.matchedProduct?.name || displayLabel,
+        qtyLabel: getProfitMetaValue(o, "Size/Qty") || "—",
+        revenue: orderSp,
+        cost: orderCp,
+        customer,
+        createdAt: o.created_at,
+      }];
+    }
+
+    const itemBreakdown = items.map((item: any) => {
+      const linkedProduct = item.product_id ? productById.get(item.product_id) : null;
+      const matchedProduct = linkedProduct || matchProductByText(
+        item.product_name || item.name || "",
+        ...getOrderFallbackTexts(o)
+      );
+      const categoryId = linkedProduct?.category_id
+        ?? matchedProduct?.category_id
+        ?? (item as any).category_id
+        ?? guessCategory(item.product_name || item.name || "", o.notes || "");
+      const categoryName = categoryById.get(categoryId)?.name
+        ?? (categoryId === "__custom__" ? "Other / Custom" : "Unknown");
+      const quantity = Number(item.quantity) || 0;
+      const baseRevenue = Number(item.unit_price || 0) * quantity;
+      return {
+        categoryId,
+        categoryName,
+        label: matchedProduct?.name || item.product_name || item.name || "Custom item",
+        quantity,
+        baseRevenue,
+      };
+    });
+
+    const totalBaseRevenue = itemBreakdown.reduce((sum, item) => sum + item.baseRevenue, 0);
+    const sliceMap: Record<string, ProfitSlice> = {};
+
+    itemBreakdown.forEach(item => {
+      const share = totalBaseRevenue > 0 ? item.baseRevenue / totalBaseRevenue : 1 / itemBreakdown.length;
+      const allocatedRevenue = orderSp * share;
+      const allocatedCost = orderCp != null ? orderCp * share : null;
+      const key = `${o.id}:${item.categoryId}`;
+
+      if (!sliceMap[key]) {
+        sliceMap[key] = {
+          orderId: o.id,
+          categoryId: item.categoryId,
+          categoryName: item.categoryName,
+          label: item.label,
+          qtyLabel: item.quantity > 0 ? String(item.quantity) : getProfitMetaValue(o, "Size/Qty") || "—",
+          revenue: 0,
+          cost: orderCp != null ? 0 : null,
+          customer,
+          createdAt: o.created_at,
+        };
+      } else if (!sliceMap[key].label.includes(item.label)) {
+        sliceMap[key].label = `${sliceMap[key].label}, ${item.label}`;
+      }
+
+      sliceMap[key].revenue += allocatedRevenue;
+      if (allocatedCost != null && sliceMap[key].cost != null) sliceMap[key].cost += allocatedCost;
+      if (item.quantity > 0) {
+        const nextQty = (Number(sliceMap[key].qtyLabel) || 0) + item.quantity;
+        sliceMap[key].qtyLabel = String(nextQty);
+      }
+    });
+
+    return Object.values(sliceMap);
+  });
+
+  const profitTabCatMap: Record<string, ProfitCatEntry> = {};
+  profitPeriodSlices.forEach(slice => {
+    if (!profitTabCatMap[slice.categoryId]) {
+      profitTabCatMap[slice.categoryId] = {
+        id: slice.categoryId,
+        name: slice.categoryName,
+        revenue: 0,
+        spWithCp: 0,
+        cost: 0,
+        hasCp: false,
+        ordSet: new Set(),
+      };
+    }
+    const entry = profitTabCatMap[slice.categoryId];
+    entry.revenue += slice.revenue;
+    entry.ordSet.add(slice.orderId);
+    if (slice.cost != null) {
+      entry.cost += slice.cost;
+      entry.spWithCp += slice.revenue;
+      entry.hasCp = true;
+    }
+  });
+  // Legacy aggregation kept commented while the slice-based profitability path is active.
+  /*
+  profitPeriodOrders.forEach(o => {
+    const items = (orderItems[o.id] || []) as any[];
+    if (items.length > 0) {
+      items.forEach((item: any) => {
+        const prod = products.find(p => p.id === item.product_id);
+        const catId = prod?.category_id
+          ?? (item as any).category_id
+          ?? guessCategory(item.product_name || item.name || "", o.notes || "");
+        if (!profitTabCatMap[catId]) {
+          const cat = categories.find(c => c.id === catId);
+          profitTabCatMap[catId] = {
+            id: catId, name: cat?.name ?? (catId === "__custom__" ? "Other / Custom" : "Unknown"),
+            revenue: 0, spWithCp: 0, cost: 0, hasCp: false, ordSet: new Set(),
+            catProds: products.filter(p => p.category_id === catId),
+          };
+        }
+        const entry = profitTabCatMap[catId];
+        const qty   = Number(item.quantity) || 0;
+        const itemSp = Number(item.unit_price || 0) * qty;
+        entry.revenue += itemSp;
+        entry.ordSet.add(o.id);
+        const cpAlloc = getProfitItemCp(o.id, itemSp);
+        if (cpAlloc != null) { entry.cost += cpAlloc; entry.spWithCp += itemSp; entry.hasCp = true; }
+      });
+    } else {
+      // Order has no line items — attribute total to "Other / Custom" bucket
+      const catId = "__custom__";
+      if (!profitTabCatMap[catId]) {
+        profitTabCatMap[catId] = {
+          id: catId, name: "Other / Custom", revenue: 0, spWithCp: 0, cost: 0,
+          hasCp: false, ordSet: new Set(), catProds: [],
+        };
+      }
+      const entry = profitTabCatMap[catId];
+      const ordSp = Number(o.total || 0);
+      entry.revenue += ordSp;
+      entry.ordSet.add(o.id);
+      const hasCp = (o as any).cost_price != null && Number((o as any).cost_price) > 0;
+      if (hasCp) {
+        entry.cost += Number((o as any).cost_price);
+        entry.spWithCp += ordSp;
+        entry.hasCp = true;
+      }
+    }
+  });
+  */
+  const profitTabCatStats = Object.values(profitTabCatMap).map(entry => {
+    const profit = entry.hasCp ? entry.spWithCp - entry.cost : null;
+    const margin = entry.hasCp && entry.spWithCp > 0 ? (profit! / entry.spWithCp) * 100 : null;
+    return { ...entry, profit, margin, orderCount: entry.ordSet.size };
+  }).filter(entry => entry.orderCount > 0 || entry.revenue > 0)
+    .sort((a, b) => b.revenue - a.revenue);
+
+  // Drilldown: find selected category
+  const profitTabDrillCat = profitTabCatStats.find(c => c.name === profitTabDrilldown);
+  type DrillOrderRowNew = {
+    orderId: string;
+    name: string;
+    qtyLabel: string;
+    totalSp: number;
+    cost: number | null;
+    profit: number | null;
+    margin: number | null;
+    customer: string;
+    createdAt: string;
+  };
+  const profitTabDrillRows: DrillOrderRowNew[] = (() => {
+    if (!profitTabDrillCat) return [];
+    return profitPeriodSlices
+      .filter(slice => slice.categoryId === profitTabDrillCat.id)
+      .map(slice => {
+        const profit = slice.cost != null ? slice.revenue - slice.cost : null;
+        const margin = slice.cost != null && slice.revenue > 0 ? (profit! / slice.revenue) * 100 : null;
+        return {
+          orderId: slice.orderId,
+          name: slice.label,
+          qtyLabel: slice.qtyLabel,
+          totalSp: slice.revenue,
+          cost: slice.cost,
+          profit,
+          margin,
+          customer: slice.customer,
+          createdAt: slice.createdAt,
+        };
+      })
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  })();
+
+  // Legacy drilldown kept commented while the per-order drilldown above is active.
+  /*
+  type DrillOrderRow = { name: string; units: number; totalSp: number; cost: number | null; profit: number | null; margin: number | null; orderCount: number };
+  const profitTabDrillAllItems: DrillOrderRow[] = (() => {
+    if (!profitTabDrillCat) return [];
+    const cmap: Record<string, { totalSp: number; spWithCp: number; cost: number; ordSet: Set<string>; units: number }> = {};
+    profitPeriodOrders.forEach(o => {
+      (orderItems[o.id] || []).forEach((item: any) => {
+        const prod  = products.find(p => p.id === item.product_id);
+        const catId = prod?.category_id
+          ?? (item as any).category_id
+          ?? guessCategory(item.product_name || item.name || "", o.notes || "");
+        if (catId !== profitTabDrillCat.id) return;
+        const label: string = item.product_name || item.name || "Custom item";
+        if (!cmap[label]) cmap[label] = { totalSp: 0, spWithCp: 0, cost: 0, ordSet: new Set(), units: 0 };
+        const qty    = Number(item.quantity) || 0;
+        const itemSp = Number(item.unit_price || 0) * qty;
+        cmap[label].totalSp  += itemSp;
+        cmap[label].units    += qty;
+        cmap[label].ordSet.add(o.id);
+        const cp = getProfitItemCp(o.id, itemSp);
+        if (cp != null) { cmap[label].cost += cp; cmap[label].spWithCp += itemSp; }
+      });
+    });
+    return Object.entries(cmap).map(([name, e]) => {
+      const profit = e.spWithCp > 0 ? e.spWithCp - e.cost : null;
+      const margin = e.spWithCp > 0 ? (profit! / e.spWithCp) * 100 : null;
+      return { name, units: e.units, totalSp: e.totalSp, cost: e.spWithCp > 0 ? e.cost : null, profit, margin, orderCount: e.ordSet.size };
+    }).sort((a, b) => b.totalSp - a.totalSp);
+  })();
+  */
 
   const deliveredOrderIds = new Set(deliveredOrders.map(o => o.id));
   const topProducts = products.map(p => {
@@ -791,41 +1390,6 @@ const Admin = () => {
   const revenueFromCostOrders = ordersWithCost.reduce((s, o) => s + Number((o as any).payment_amount ?? o.total), 0);
   const totalProfit = revenueFromCostOrders - totalCostRecorded;
   const overallMargin = revenueFromCostOrders > 0 ? (totalProfit / revenueFromCostOrders) * 100 : null;
-
-  // Monthly profitability — last 6 months
-  const monthlyProfitability = (() => {
-    const result: { key: string; label: string; revenue: number; cost: number; profit: number; margin: number | null; hasCP: boolean }[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(1);
-      d.setMonth(d.getMonth() - i);
-      const key = d.toISOString().slice(0, 7);
-      const label = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" });
-      const monthOrders = deliveredOrders.filter(o => o.created_at.startsWith(key));
-      let revenue = 0;
-      let cost = 0;
-      let hasCP = false;
-      monthOrders.forEach(o => {
-        revenue += Number((o as any).payment_amount ?? o.total);
-        // Prefer product-level CP via order items; fall back to per-order CP
-        const items = (orderItems[o.id] || []) as any[];
-        let itemsCost = 0;
-        let allHaveCP = items.length > 0;
-        items.forEach((item: any) => {
-          const prod = products.find(p => p.id === item.product_id);
-          const cp = prod && (prod as any).cost_price != null ? Number((prod as any).cost_price) : null;
-          if (cp != null) { itemsCost += cp * item.quantity; }
-          else { allHaveCP = false; }
-        });
-        if (allHaveCP && items.length > 0) { cost += itemsCost; hasCP = true; }
-        else if ((o as any).cost_price != null) { cost += Number((o as any).cost_price); hasCP = true; }
-      });
-      const profit = revenue - cost;
-      const margin = hasCP && revenue > 0 ? (profit / revenue) * 100 : null;
-      result.push({ key, label, revenue, cost, profit, margin, hasCP });
-    }
-    return result;
-  })();
 
   const ordersByStatus = ["pending", "confirmed", "preparing", "ready", "delivered", "cancelled"].map(s => ({
     status: s, count: orders.filter(o => o.status === s).length
@@ -961,6 +1525,7 @@ const Admin = () => {
     { key: "feedback", label: "Feedback", icon: MessageSquare },
     { key: "users", label: "Users", icon: Users },
     { key: "analytics", label: "Analytics", icon: BarChart2 },
+    { key: "profitability", label: "Profitability", icon: TrendingUp },
     { key: "banners", label: "Banners", icon: Megaphone },
     { key: "instagram", label: "Instagram", icon: Instagram },
   ];
@@ -985,9 +1550,9 @@ const Admin = () => {
               <button type="button" onClick={() => setShowNotifDropdown(!showNotifDropdown)}
                 className="relative p-2 hover:bg-secondary rounded-full transition-colors">
                 <Bell className="w-5 h-5 text-foreground" />
-                {totalNotifications > 0 && (
+                {unseenCount > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-destructive text-destructive-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
-                    {totalNotifications > 9 ? "9+" : totalNotifications}
+                    {unseenCount > 9 ? "9+" : unseenCount}
                   </span>
                 )}
               </button>
@@ -995,7 +1560,15 @@ const Admin = () => {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowNotifDropdown(false)} />
                   <div className="absolute right-0 top-full mt-2 w-64 bg-card rounded-xl shadow-card border border-border/50 z-50 overflow-hidden">
-                    <p className="font-body text-xs font-semibold text-foreground px-4 pt-3 pb-2">Notifications</p>
+                    <div className="flex items-center justify-between px-4 pt-3 pb-2">
+                      <p className="font-body text-xs font-semibold text-foreground">Notifications</p>
+                      {unseenCount > 0 && (
+                        <button type="button" onClick={dismissNotifications}
+                          className="font-body text-[11px] text-primary hover:underline">
+                          Mark all as read
+                        </button>
+                      )}
+                    </div>
                     {totalNotifications === 0 ? (
                       <p className="px-4 pb-4 font-body text-xs text-muted-foreground">All caught up!</p>
                     ) : (
@@ -1004,23 +1577,44 @@ const Admin = () => {
                           <button type="button" onClick={() => { setTab("orders"); setShowNotifDropdown(false); }}
                             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors text-left">
                             <ShoppingBag className="w-4 h-4 text-primary shrink-0" />
-                            <span className="font-body text-xs">{pendingOrders} pending order{pendingOrders > 1 ? "s" : ""}</span>
+                            <div className="flex-1 min-w-0">
+                              <span className="font-body text-xs">{pendingOrders} pending order{pendingOrders > 1 ? "s" : ""}</span>
+                            </div>
+                            {unseenOrders > 0 && (
+                              <span className="shrink-0 w-4 h-4 bg-destructive text-destructive-foreground text-[9px] font-bold rounded-full flex items-center justify-center">{unseenOrders}</span>
+                            )}
                           </button>
                         )}
                         {pendingCustom > 0 && (
                           <button type="button" onClick={() => { setTab("custom"); setShowNotifDropdown(false); }}
                             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors text-left">
                             <Edit2 className="w-4 h-4 text-primary shrink-0" />
-                            <span className="font-body text-xs">{pendingCustom} custom request{pendingCustom > 1 ? "s" : ""}</span>
+                            <div className="flex-1 min-w-0">
+                              <span className="font-body text-xs">{pendingCustom} custom request{pendingCustom > 1 ? "s" : ""}</span>
+                            </div>
+                            {unseenCustom > 0 && (
+                              <span className="shrink-0 w-4 h-4 bg-destructive text-destructive-foreground text-[9px] font-bold rounded-full flex items-center justify-center">{unseenCustom}</span>
+                            )}
                           </button>
                         )}
                         {feedbacks.length > 0 && (
                           <button type="button" onClick={() => { setTab("feedback"); setShowNotifDropdown(false); }}
                             className="w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors text-left">
                             <MessageSquare className="w-4 h-4 text-primary shrink-0" />
-                            <span className="font-body text-xs">{feedbacks.length} new feedback</span>
+                            <div className="flex-1 min-w-0">
+                              <span className="font-body text-xs">{feedbacks.length} feedback</span>
+                            </div>
+                            {unseenFeedbacks > 0 && (
+                              <span className="shrink-0 w-4 h-4 bg-destructive text-destructive-foreground text-[9px] font-bold rounded-full flex items-center justify-center">{unseenFeedbacks}</span>
+                            )}
                           </button>
                         )}
+                        <div className="px-4 py-2">
+                          <button type="button" onClick={() => { dismissNotifications(); setShowNotifDropdown(false); }}
+                            className="w-full py-1.5 font-body text-[11px] text-muted-foreground hover:text-foreground border border-border/50 rounded-lg transition-colors">
+                            Clear all notifications
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -1070,60 +1664,128 @@ const Admin = () => {
         {/* ── PRODUCTS TAB ── */}
         {!dataLoading && tab === "products" && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            {/* Always-visible header */}
             <div className="flex justify-between items-center mb-4">
-              <p className="font-body text-sm text-muted-foreground">{products.length} products</p>
-              <button type="button" onClick={() => { setEditingProductId(null); setProductForm(emptyProductForm); setShowAddProduct(true); }}
+              <div className="flex items-center gap-2">
+                {adminProductsView === "list" && productCategoryFilter !== "all" && (
+                  <button type="button"
+                    onClick={() => { setAdminProductsView("categories"); setProductCategoryFilter("all"); setProductSearch(""); setShowAddProduct(false); }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg font-body text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    Categories
+                  </button>
+                )}
+                {adminProductsView === "list" && productCategoryFilter !== "all"
+                  ? <p className="font-body text-sm font-semibold text-foreground">{categories.find(c => c.id === productCategoryFilter)?.name}</p>
+                  : adminProductsView === "list"
+                  ? <p className="font-body text-sm text-muted-foreground">All {products.length} products</p>
+                  : <p className="font-body text-sm text-muted-foreground">{products.length} products across {categories.length} categories</p>
+                }
+              </div>
+              <button type="button" onClick={() => { setEditingProductId(null); setProductForm(emptyProductForm); setShowAddProduct(true); setAdminProductsView("list"); }}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg font-body text-sm hover:opacity-90">
                 <Plus className="w-4 h-4" /> Add Product
               </button>
             </div>
 
-            {/* Search + Category Filter + Sort */}
-            <div className="space-y-3 mb-4">
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <input
-                    placeholder="Search products..."
-                    value={productSearch}
-                    onChange={e => setProductSearch(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                </div>
-                <select value={productSort} onChange={e => setProductSort(e.target.value as any)}
-                  className="px-3 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none">
-                  <option value="newest">Newest First</option>
-                  <option value="oldest">Oldest First</option>
-                  <option value="name-az">Name A–Z</option>
-                  <option value="price-low">Price: Low–High</option>
-                  <option value="price-high">Price: High–Low</option>
-                </select>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => setProductCategoryFilter("all")}
-                  className={`px-3 py-1.5 rounded-lg font-body text-xs font-medium transition-colors ${productCategoryFilter === "all" ? "bg-foreground text-background" : "bg-secondary text-muted-foreground hover:text-foreground"}`}
-                >
-                  All ({products.length})
-                </button>
-                {categories.map(c => {
-                  const count = products.filter(p => p.category_id === c.id).length;
+            {/* ── CATEGORY OVERVIEW VIEW ── */}
+            {adminProductsView === "categories" && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
+                {categories.map(cat => {
+                  const catProducts = products.filter(p => p.category_id === cat.id);
+                  const available = catProducts.filter(p => p.is_available).length;
+                  const outOfStock = catProducts.length - available;
                   return (
                     <button
-                      key={c.id}
+                      key={cat.id}
                       type="button"
-                      onClick={() => setProductCategoryFilter(c.id)}
-                      className={`px-3 py-1.5 rounded-lg font-body text-xs font-medium transition-colors ${productCategoryFilter === c.id ? "bg-foreground text-background" : "bg-secondary text-muted-foreground hover:text-foreground"}`}
+                      onClick={() => { setProductCategoryFilter(cat.id); setAdminProductsView("list"); setProductSearch(""); }}
+                      className="text-left bg-card border border-border/50 rounded-2xl p-5 hover:border-primary/50 hover:shadow-card transition-all group"
                     >
-                      {c.name} ({count})
+                      <p className="font-heading text-base font-semibold text-foreground group-hover:text-primary transition-colors mb-1">{cat.name}</p>
+                      <p className="font-body text-2xl font-bold text-foreground mb-2">{catProducts.length}</p>
+                      <div className="flex gap-2 flex-wrap">
+                        <span className="font-body text-[11px] px-2 py-0.5 rounded-full bg-green-100 text-green-700">{available} available</span>
+                        {outOfStock > 0 && <span className="font-body text-[11px] px-2 py-0.5 rounded-full bg-red-100 text-red-600">{outOfStock} out of stock</span>}
+                      </div>
                     </button>
                   );
                 })}
+                {/* All products card */}
+                <button
+                  type="button"
+                  onClick={() => { setProductCategoryFilter("all"); setAdminProductsView("list"); setProductSearch(""); }}
+                  className="text-left bg-secondary/30 border border-dashed border-border rounded-2xl p-5 hover:border-primary/50 transition-all group"
+                >
+                  <p className="font-heading text-base font-semibold text-muted-foreground group-hover:text-foreground transition-colors mb-1">All Products</p>
+                  <p className="font-body text-2xl font-bold text-foreground mb-2">{products.length}</p>
+                  <span className="font-body text-[11px] px-2 py-0.5 rounded-full bg-secondary text-muted-foreground">view all</span>
+                </button>
               </div>
-            </div>
+            )}
 
-            {showAddProduct && (
+            {/* ── LIST VIEW ── */}
+            {adminProductsView === "list" && (
+              <>
+                {/* Featured Home Slots — only when a specific category is selected */}
+                {productCategoryFilter !== "all" && (() => {
+                  const catProds = products.filter(p => p.category_id === productCategoryFilter);
+                  const slots = featuredSlotsMap[productCategoryFilter] || Array(6).fill(null);
+                  return (
+                    <div className="bg-card border border-border/50 rounded-2xl p-5 mb-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <p className="font-heading text-sm font-semibold text-foreground">Home Page Featured Slots</p>
+                          <p className="font-body text-xs text-muted-foreground mt-0.5">Choose up to 6 products shown in this category's home section. Unfilled slots fall back to sort order.</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                        {[0, 1, 2, 3, 4, 5].map(idx => (
+                          <div key={idx} className="flex flex-col gap-1">
+                            <label className="font-body text-[11px] font-semibold text-muted-foreground">Slot {idx + 1}</label>
+                            <select
+                              value={slots[idx] || ""}
+                              onChange={e => saveFeaturedSlot(productCategoryFilter, idx + 1, e.target.value || null)}
+                              className="px-2 py-2 bg-secondary/50 border border-border rounded-lg font-body text-xs focus:outline-none focus:ring-2 focus:ring-primary/30"
+                            >
+                              <option value="">— None —</option>
+                              {catProds.map(p => (
+                                <option key={p.id} value={p.id}>{p.name}{!p.is_available ? " (out of stock)" : ""}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Search + Sort */}
+                <div className="space-y-3 mb-4">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <input
+                        placeholder="Search products..."
+                        value={productSearch}
+                        onChange={e => setProductSearch(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+                    <select value={productSort} onChange={e => setProductSort(e.target.value as any)}
+                      className="px-3 py-2.5 bg-secondary/50 border border-border rounded-xl font-body text-sm focus:outline-none">
+                      <option value="newest">Newest First</option>
+                      <option value="oldest">Oldest First</option>
+                      <option value="name-az">Name A–Z</option>
+                      <option value="price-low">Price: Low–High</option>
+                      <option value="price-high">Price: High–Low</option>
+                    </select>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {adminProductsView === "list" && showAddProduct && (
               <div className="bg-card rounded-2xl p-6 shadow-card border border-border/50 mb-6 space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="font-heading text-lg font-semibold">{editingProductId ? "Edit Product" : "Add Product"}</h2>
@@ -1264,7 +1926,7 @@ const Admin = () => {
               </div>
             )}
 
-            <div className="space-y-2">
+            {adminProductsView === "list" && <div className="space-y-2">
               {products.filter(p => {
                 const matchCat = productCategoryFilter === "all" || p.category_id === productCategoryFilter;
                 const matchSearch = !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase());
@@ -1301,7 +1963,7 @@ const Admin = () => {
                   </div>
                 </div>
               ))}
-            </div>
+            </div>}
           </motion.div>
         )}
 
@@ -2335,116 +2997,6 @@ const Admin = () => {
               </div>
             </div>
 
-            {/* Profitability */}
-            <div className="bg-card rounded-2xl p-5 border border-border/50">
-              <div className="flex items-center justify-between gap-2 mb-1 flex-wrap">
-                <h3 className="font-heading text-base font-semibold">Profitability</h3>
-                {ordersWithCost.length > 0 && (
-                  <span className="font-body text-[10px] text-muted-foreground">Based on {ordersWithCost.length} delivered order{ordersWithCost.length !== 1 ? "s" : ""} with CP recorded</span>
-                )}
-              </div>
-
-              {/* Tier legend — always visible */}
-              <div className="flex flex-wrap gap-2 mb-4 mt-2">
-                {[
-                  { emoji: "🔴", label: "Low", range: "< 30%", bg: "bg-red-50 border-red-200 text-red-700" },
-                  { emoji: "🟡", label: "Average", range: "30 – 50%", bg: "bg-amber-50 border-amber-200 text-amber-700" },
-                  { emoji: "🟢", label: "Good", range: "50 – 70%", bg: "bg-green-50 border-green-200 text-green-700" },
-                  { emoji: "🔥", label: "Premium", range: "70% +", bg: "bg-purple-50 border-purple-200 text-purple-700" },
-                ].map(t => (
-                  <span key={t.label} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-body font-medium ${t.bg}`}>
-                    {t.emoji} {t.label} <span className="font-normal opacity-70">{t.range}</span>
-                  </span>
-                ))}
-              </div>
-
-              {ordersWithCost.length > 0 ? (
-                <>
-                  {/* Overall KPIs */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-                    <div className="text-center p-3 bg-secondary/30 rounded-xl">
-                      <p className="font-body text-[10px] text-muted-foreground mb-1">Total Selling Price</p>
-                      <p className="font-heading text-xl font-bold text-green-600">₹{revenueFromCostOrders.toLocaleString()}</p>
-                    </div>
-                    <div className="text-center p-3 bg-secondary/30 rounded-xl">
-                      <p className="font-body text-[10px] text-muted-foreground mb-1">Total Cost Price</p>
-                      <p className="font-heading text-xl font-bold text-red-500">₹{totalCostRecorded.toLocaleString()}</p>
-                    </div>
-                    <div className="text-center p-3 bg-secondary/30 rounded-xl">
-                      <p className="font-body text-[10px] text-muted-foreground mb-1">Profit</p>
-                      <p className={`font-heading text-xl font-bold ${totalProfit >= 0 ? "text-green-600" : "text-red-500"}`}>
-                        ₹{totalProfit.toLocaleString()}
-                      </p>
-                    </div>
-                    <div className="text-center p-3 bg-secondary/30 rounded-xl">
-                      <p className="font-body text-[10px] text-muted-foreground mb-1">Margin</p>
-                      <p className={`font-heading text-xl font-bold ${
-                        overallMargin! >= 70 ? "text-purple-600" : overallMargin! >= 50 ? "text-green-600" : overallMargin! >= 30 ? "text-amber-600" : "text-red-500"
-                      }`}>
-                        {overallMargin!.toFixed(1)}%
-                      </p>
-                      <p className="font-body text-[10px] text-muted-foreground mt-0.5">
-                        {overallMargin! >= 70 ? "🔥 Premium" : overallMargin! >= 50 ? "🟢 Good" : overallMargin! >= 30 ? "🟡 Average" : "🔴 Low"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Monthly breakdown */}
-                  <div>
-                    <p className="font-body text-xs font-semibold text-foreground mb-2">Monthly Breakdown</p>
-                    <div className="overflow-x-auto">
-                      <table className="w-full font-body text-xs min-w-[480px]">
-                        <thead>
-                          <tr className="border-b border-border/50">
-                            <th className="text-left py-2 pr-3 text-muted-foreground font-medium">Month</th>
-                            <th className="text-right py-2 px-3 text-muted-foreground font-medium">Selling Price (SP)</th>
-                            <th className="text-right py-2 px-3 text-muted-foreground font-medium">Cost Price (CP)</th>
-                            <th className="text-right py-2 px-3 text-muted-foreground font-medium">Profit</th>
-                            <th className="text-right py-2 pl-3 text-muted-foreground font-medium">Margin</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {monthlyProfitability.map(m => (
-                            <tr key={m.key} className="border-b border-border/30 last:border-0 hover:bg-secondary/20 transition-colors">
-                              <td className="py-2 pr-3 text-foreground font-medium">{m.label}</td>
-                              <td className="text-right py-2 px-3 text-green-600 font-semibold">
-                                {m.revenue > 0 ? `₹${m.revenue.toLocaleString()}` : <span className="text-muted-foreground/50">—</span>}
-                              </td>
-                              <td className="text-right py-2 px-3 text-red-500">
-                                {m.hasCP ? `₹${m.cost.toLocaleString()}` : <span className="text-muted-foreground/50">—</span>}
-                              </td>
-                              <td className={`text-right py-2 px-3 font-semibold ${m.hasCP ? (m.profit >= 0 ? "text-green-600" : "text-red-500") : ""}`}>
-                                {m.hasCP ? `₹${m.profit.toLocaleString()}` : <span className="text-muted-foreground/50">—</span>}
-                              </td>
-                              <td className="text-right py-2 pl-3">
-                                {m.margin != null ? (
-                                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                                    m.margin >= 70 ? "bg-purple-100 text-purple-700"
-                                    : m.margin >= 50 ? "bg-green-100 text-green-700"
-                                    : m.margin >= 30 ? "bg-amber-100 text-amber-700"
-                                    : "bg-red-100 text-red-700"
-                                  }`}>
-                                    {m.margin >= 70 ? "🔥" : m.margin >= 50 ? "🟢" : m.margin >= 30 ? "🟡" : "🔴"} {m.margin.toFixed(1)}%
-                                  </span>
-                                ) : (
-                                  <span className="text-muted-foreground/50 text-[10px]">no CP</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center gap-3 py-2">
-                  <span className="text-lg">📊</span>
-                  <p className="font-body text-sm text-muted-foreground">Set cost prices on products or record CP per order to see profitability analytics here.</p>
-                </div>
-              )}
-            </div>
-
             {/* Row 2 — Operations KPIs */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="bg-card rounded-2xl p-4 border border-border/50">
@@ -2560,111 +3112,6 @@ const Admin = () => {
                 </div>
               </div>
 
-              {/* Profitability by Category */}
-              <div className="bg-card rounded-2xl p-5 border border-border/50 md:col-span-2">
-                <h3 className="font-heading text-base font-semibold mb-1">Profitability by Category</h3>
-                <p className="font-body text-[10px] text-muted-foreground mb-3">
-                  Delivered orders only · Margin calculated from products with CP set
-                </p>
-
-                {/* Tier legend */}
-                <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-border/40">
-                  {[
-                    { emoji: "🔴", label: "Low", range: "< 30%", bg: "bg-red-50 border-red-200 text-red-700" },
-                    { emoji: "🟡", label: "Average", range: "30 – 50%", bg: "bg-amber-50 border-amber-200 text-amber-700" },
-                    { emoji: "🟢", label: "Good", range: "50 – 70%", bg: "bg-green-50 border-green-200 text-green-700" },
-                    { emoji: "🔥", label: "Premium", range: "70% +", bg: "bg-purple-50 border-purple-200 text-purple-700" },
-                  ].map(t => (
-                    <span key={t.label} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-body font-medium ${t.bg}`}>
-                      {t.emoji} {t.label} <span className="font-normal opacity-70">{t.range}</span>
-                    </span>
-                  ))}
-                </div>
-
-                {revenueByCategory.length === 0 ? (
-                  <p className="font-body text-xs text-muted-foreground text-center py-4">No delivered orders yet</p>
-                ) : (
-                  <div className="grid sm:grid-cols-2 gap-3">
-                    {revenueByCategory.map(cat => {
-                      const tierColor = cat.hasCp
-                        ? cat.margin! >= 70 ? { pill: "bg-purple-100 text-purple-700", bar: "bg-purple-400", card: "border-purple-200" }
-                        : cat.margin! >= 50 ? { pill: "bg-green-100 text-green-700", bar: "bg-green-500", card: "border-green-200" }
-                        : cat.margin! >= 30 ? { pill: "bg-amber-100 text-amber-700", bar: "bg-amber-400", card: "border-amber-200" }
-                        : { pill: "bg-red-100 text-red-700", bar: "bg-red-400", card: "border-red-200" }
-                        : { pill: "bg-secondary text-muted-foreground", bar: "bg-green-500", card: "border-border/50" };
-
-                      return (
-                        <div key={cat.name} className={`rounded-xl border p-4 space-y-3 ${tierColor.card}`}>
-                          {/* Header */}
-                          <div className="flex items-start justify-between gap-2">
-                            <span className="font-body text-sm font-semibold text-foreground leading-tight">{cat.name}</span>
-                            {cat.hasCp ? (
-                              <span className={`shrink-0 font-body text-[11px] font-bold px-2 py-0.5 rounded-full ${tierColor.pill}`}>
-                                {cat.margin! >= 70 ? "🔥" : cat.margin! >= 50 ? "🟢" : cat.margin! >= 30 ? "🟡" : "🔴"} {cat.margin!.toFixed(1)}%
-                              </span>
-                            ) : (
-                              <span className="shrink-0 font-body text-[10px] text-muted-foreground/60 bg-secondary px-2 py-0.5 rounded-full">no CP</span>
-                            )}
-                          </div>
-
-                          {/* Stats grid */}
-                          <div className="grid grid-cols-3 gap-2 text-center">
-                            <div>
-                              <p className="font-body text-[10px] text-muted-foreground">Units Sold</p>
-                              <p className="font-body text-sm font-semibold text-foreground">{cat.unitsSold}</p>
-                            </div>
-                            <div>
-                              <p className="font-body text-[10px] text-muted-foreground">Revenue (SP)</p>
-                              <p className="font-body text-sm font-semibold text-green-600">₹{cat.revenue.toLocaleString()}</p>
-                            </div>
-                            {cat.hasCp ? (
-                              <div>
-                                <p className="font-body text-[10px] text-muted-foreground">Profit</p>
-                                <p className={`font-body text-sm font-semibold ${cat.profit >= 0 ? "text-green-600" : "text-red-500"}`}>
-                                  ₹{cat.profit.toLocaleString()}
-                                </p>
-                              </div>
-                            ) : (
-                              <div>
-                                <p className="font-body text-[10px] text-muted-foreground">Profit</p>
-                                <p className="font-body text-sm text-muted-foreground/40">—</p>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* CP row */}
-                          {cat.hasCp && (
-                            <p className="font-body text-[10px] text-muted-foreground">
-                              Cost ₹{cat.totalCost.toLocaleString()} · SP ₹{cat.revenueWithCp.toLocaleString()}
-                            </p>
-                          )}
-
-                          {/* Stacked bar */}
-                          <div className="h-2 rounded-full overflow-hidden bg-secondary/40 flex">
-                            {cat.hasCp ? (
-                              <>
-                                <div className="bg-red-300 h-full transition-all"
-                                  style={{ width: `${Math.min((cat.totalCost / cat.revenueWithCp) * 100, 100)}%` }} />
-                                <div className={`h-full flex-1 transition-all ${tierColor.bar}`} />
-                              </>
-                            ) : (
-                              <div className="bg-green-400 h-full rounded-full transition-all"
-                                style={{ width: `${(cat.revenue / revenueByCategory[0].revenue) * 100}%` }} />
-                            )}
-                          </div>
-                          {cat.hasCp && (
-                            <div className="flex gap-3 font-body text-[10px] text-muted-foreground">
-                              <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-sm bg-red-300" />Cost</span>
-                              <span className="flex items-center gap-1"><span className={`inline-block w-2 h-2 rounded-sm ${tierColor.bar}`} />Profit</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
               {/* Business Insights */}
               <div className="bg-card rounded-2xl p-5 border border-border/50 md:col-span-2">
                 <h3 className="font-heading text-base font-semibold mb-3">Insights & Recommendations</h3>
@@ -2745,6 +3192,242 @@ const Admin = () => {
                   )}
                 </div>
               </div>
+            </div>
+          </motion.div>
+        )}
+
+        {/* ── Profitability Tab ── */}
+        {!dataLoading && tab === "profitability" && (
+          <motion.div key="profitability" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+
+            {/* No CP recorded anywhere — soft prompt */}
+            {!profitAnyCp && (
+              <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-2xl">
+                <TrendingUp className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-body text-sm font-semibold text-amber-800">Add CP to orders to unlock full profitability</p>
+                  <p className="font-body text-xs text-amber-700 mt-0.5">
+                    Open any order → enter its Cost Price. Revenue (SP) is already shown below from order items.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="bg-card rounded-2xl p-5 border border-border/50">
+              {/* Header + Period filter */}
+              <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+                <h3 className="font-heading text-base font-semibold flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-primary" /> Profitability overview
+                </h3>
+                <div className="flex gap-1 bg-secondary/40 rounded-xl p-1">
+                  {(["Week", "Month", "Quarter", "Year"] as const).map(p => (
+                    <button key={p}
+                      onClick={() => { setProfitTabPeriod(p.toLowerCase() as any); setProfitTabDrilldown(null); }}
+                      className={`font-body text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                        profitTabPeriod === p.toLowerCase()
+                          ? "bg-background shadow-sm text-foreground font-semibold"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}>{p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {profitTabDrilldown ? (
+                /* ── DRILL DOWN VIEW ── */
+                <>
+                  <div className="flex items-center gap-3 mb-5 flex-wrap">
+                    <button onClick={() => setProfitTabDrilldown(null)}
+                      className="flex items-center gap-1.5 font-body text-sm text-muted-foreground hover:text-foreground border border-border/50 rounded-lg px-3 py-1.5 transition-colors">
+                      <ArrowLeft className="w-3.5 h-3.5" /> All categories
+                    </button>
+                    <span className="font-body text-sm font-semibold text-foreground">{profitTabDrilldown}</span>
+                  </div>
+
+                  {/* Legend */}
+                  <div className="flex flex-wrap gap-1.5 mb-5">
+                    {[
+                      { label: "Low <30%", cls: "bg-red-50 border-red-200 text-red-600" },
+                      { label: "Healthy 30–50%", cls: "bg-amber-50 border-amber-200 text-amber-600" },
+                      { label: "Good 50–70%", cls: "bg-green-50 border-green-200 text-green-600" },
+                      { label: "Very high >70%", cls: "bg-blue-50 border-blue-200 text-blue-600" },
+                    ].map(t => (
+                      <span key={t.label} className={`inline-flex items-center px-2.5 py-0.5 rounded-full border text-[11px] font-body font-medium ${t.cls}`}>{t.label}</span>
+                    ))}
+                  </div>
+
+                  {/* Delivered orders for this category */}
+                  <p className="font-body text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-1">Delivered orders in this category</p>
+                  <p className="font-body text-[11px] text-muted-foreground mb-3">CP is set per-order — open any order to enter its cost price.</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full font-body text-xs min-w-[580px]">
+                      <thead>
+                        <tr className="border-b border-border/50">
+                          {["Product / Order", "Qty / Size", "Revenue (SP)", "Cost (CP)", "Profit", "Margin %", "Status"].map(h => (
+                            <th key={h} className={`py-2.5 text-muted-foreground font-medium ${h === "Product / Order" ? "text-left pr-3" : "text-right px-2"}`}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {profitTabDrillRows.length === 0 ? (
+                          <tr><td colSpan={7} className="text-center py-8 text-muted-foreground text-xs">No orders found for this category in the selected period</td></tr>
+                        ) : profitTabDrillRows.map(r => {
+                          const tc = r.margin != null
+                            ? r.margin >= 70 ? "bg-blue-100 text-blue-700" : r.margin >= 50 ? "bg-green-100 text-green-700"
+                            : r.margin >= 30 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                            : "";
+                          return (
+                            <tr key={r.orderId} className="border-b border-border/30 last:border-0 hover:bg-secondary/20">
+                              <td className="py-2.5 pr-3 font-medium text-foreground">
+                                <div>{r.name}</div>
+                                <div className="text-[10px] font-normal text-muted-foreground mt-0.5">{r.customer} · #{r.orderId.slice(0, 8).toUpperCase()}</div>
+                              </td>
+                              <td className="text-right px-2 text-foreground">{r.qtyLabel}</td>
+                              <td className="text-right px-2 text-green-600 font-semibold">{r.totalSp > 0 ? `₹${formatLakh(r.totalSp)}` : "₹0"}</td>
+                              <td className="text-right px-2 text-amber-600">
+                                {r.cost != null ? `₹${formatLakh(r.cost)}` : <span className="text-[10px] text-amber-500 font-medium">no CP</span>}
+                              </td>
+                              <td className={`text-right px-2 font-semibold ${r.profit != null ? (r.profit >= 0 ? "text-green-600" : "text-red-500") : "text-muted-foreground"}`}>
+                                {r.profit != null ? `₹${formatLakh(r.profit)}` : "—"}
+                              </td>
+                              <td className="text-right px-2">{r.margin != null ? `${r.margin.toFixed(1)}%` : "—"}</td>
+                              <td className="text-right px-2">
+                                {r.margin != null
+                                  ? <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${tc}`}>{r.margin >= 70 ? "Very high" : r.margin >= 50 ? "Good" : r.margin >= 30 ? "Healthy" : "Low"}</span>
+                                  : <span className="text-[10px] text-amber-500 font-medium">no CP</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              ) : (
+                /* ── OVERVIEW ── */
+                <>
+                  {/* KPI tiles */}
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-5">
+                    {/* Total Orders tile */}
+                    <div className="bg-secondary/20 rounded-xl p-4 border border-border/30">
+                      <p className="font-body text-[10px] font-semibold text-muted-foreground tracking-wide mb-2">TOTAL ORDERS</p>
+                      <p className="font-heading text-2xl font-bold text-foreground">{profitPeriodOrders.length}</p>
+                      {profitPrevOrders.length > 0 && (() => {
+                        const pct = ((profitPeriodOrders.length - profitPrevOrders.length) / profitPrevOrders.length) * 100;
+                        return <p className={`font-body text-[10px] font-semibold mt-1 ${pct >= 0 ? "text-green-600" : "text-red-500"}`}>{pct >= 0 ? "+" : ""}{pct.toFixed(0)}% vs prev</p>;
+                      })()}
+                    </div>
+                    {([
+                      { label: "TOTAL REVENUE (SP)", val: profitTabStats.totalSp,  change: profitTabSpChg,     hide: false },
+                      { label: "TOTAL COST (CP)",    val: profitTabStats.totalCp,  change: profitTabCpChg,     hide: !profitTabStats.hasCp },
+                      { label: "TOTAL PROFIT",        val: profitTabStats.profit,   change: profitTabProfitChg, hide: !profitTabStats.hasCp, isProfit: true },
+                      { label: "PROFIT MARGIN",       val: null as number | null,   change: null as number | null, hide: false, isMargin: true },
+                    ]).map(kpi => (
+                      <div key={kpi.label} className="bg-secondary/20 rounded-xl p-4 border border-border/30">
+                        <p className="font-body text-[10px] font-semibold text-muted-foreground tracking-wide mb-2">{kpi.label}</p>
+                        {(kpi as any).isMargin ? (
+                          <>
+                            <p className="font-heading text-2xl font-bold text-foreground">
+                              {profitTabStats.margin != null ? `${profitTabStats.margin.toFixed(1)}%` : "—"}
+                            </p>
+                            {profitTabStats.margin != null && (
+                              <p className={`font-body text-xs font-semibold mt-1 ${profitTabStats.margin >= 50 ? "text-green-600" : profitTabStats.margin >= 30 ? "text-amber-600" : "text-red-500"}`}>
+                                {profitTabStats.margin >= 70 ? "Very High" : profitTabStats.margin >= 50 ? "Good" : profitTabStats.margin >= 30 ? "Healthy" : "Low"}
+                              </p>
+                            )}
+                          </>
+                        ) : kpi.hide ? (
+                          <p className="font-body text-xs text-muted-foreground mt-1">Add CP to orders</p>
+                        ) : (
+                          <>
+                            <p className={`font-heading text-2xl font-bold ${(kpi as any).isProfit && kpi.val! < 0 ? "text-red-500" : "text-foreground"}`}>
+                              ₹{formatLakh(kpi.val!)}
+                            </p>
+                            {kpi.change != null && (
+                              <p className={`font-body text-[10px] font-semibold mt-1 ${kpi.change >= 0 ? "text-green-600" : "text-red-500"}`}>
+                                {kpi.change >= 0 ? "+" : ""}{kpi.change.toFixed(0)}% vs prev
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Insight banner */}
+                  {profitTabStats.margin != null && (() => {
+                    const m = profitTabStats.margin;
+                    const [bg, border, titleCls, bodyCls, title, body] = m >= 70
+                      ? ["bg-blue-50","border-blue-100","text-blue-800","text-blue-700","Very high margin this period","Excellent pricing. You have room to reinvest in quality or run promotions."]
+                      : m >= 50
+                      ? ["bg-green-50","border-green-100","text-green-800","text-green-700","Good margin this period","Solid performance. Keep your cost prices accurate to stay on track."]
+                      : m >= 30
+                      ? ["bg-amber-50","border-amber-100","text-amber-800","text-amber-700","Healthy margin this period","Profitability is in a good range. Pricing looks stable."]
+                      : ["bg-red-50","border-red-100","text-red-800","text-red-700","Low margin — consider repricing or reducing costs","Some orders have low margins. Review pricing or ingredient costs."];
+                    return (
+                      <div className={`rounded-xl p-3.5 mb-5 border ${bg} ${border}`}>
+                        <p className={`font-body text-sm font-semibold ${titleCls}`}>{title}</p>
+                        <p className={`font-body text-xs mt-0.5 ${bodyCls}`}>{body}</p>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Legend */}
+                  <div className="flex flex-wrap gap-1.5 mb-4">
+                    {[
+                      { label: "Low <30%", cls: "bg-red-50 border-red-200 text-red-600" },
+                      { label: "Healthy 30–50%", cls: "bg-amber-50 border-amber-200 text-amber-600" },
+                      { label: "Good 50–70%", cls: "bg-green-50 border-green-200 text-green-600" },
+                      { label: "Very high >70%", cls: "bg-blue-50 border-blue-200 text-blue-600" },
+                    ].map(t => (
+                      <span key={t.label} className={`inline-flex items-center px-2.5 py-0.5 rounded-full border text-[11px] font-body font-medium ${t.cls}`}>{t.label}</span>
+                    ))}
+                  </div>
+
+                  {/* Category table — ALL categories always shown */}
+                  <p className="font-heading text-sm font-semibold text-foreground mb-3">Profitability by category</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full font-body text-xs min-w-[520px]">
+                      <thead>
+                        <tr className="border-b border-border/50">
+                          {["Category", "Revenue (SP)", "Cost (CP)", "Profit", "Margin %", "Status", "Orders"].map(h => (
+                            <th key={h} className={`py-2.5 text-muted-foreground font-medium ${h === "Category" ? "text-left pr-4" : "text-right px-3"}`}>{h}</th>
+                          ))}
+                          <th className="w-6" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {profitTabCatStats.map(cat => {
+                          const tc = cat.margin != null
+                            ? cat.margin >= 70 ? "bg-blue-100 text-blue-700" : cat.margin >= 50 ? "bg-green-100 text-green-700"
+                            : cat.margin >= 30 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
+                            : "";
+                          return (
+                            <tr key={cat.id}
+                              className="border-b border-border/30 last:border-0 hover:bg-secondary/20 cursor-pointer transition-colors"
+                              onClick={() => setProfitTabDrilldown(cat.name)}>
+                              <td className="py-3 pr-4 font-semibold text-foreground">{cat.name}</td>
+                              <td className="text-right px-3 text-green-600 font-semibold">{cat.revenue > 0 ? `₹${formatLakh(cat.revenue)}` : "₹0"}</td>
+                              <td className="text-right px-3 text-amber-600">{cat.hasCp ? `₹${formatLakh(cat.cost)}` : "—"}</td>
+                              <td className={`text-right px-3 font-semibold ${cat.profit != null ? (cat.profit >= 0 ? "text-green-600" : "text-red-500") : "text-muted-foreground"}`}>
+                                {cat.profit != null ? `₹${formatLakh(cat.profit)}` : "—"}
+                              </td>
+                              <td className="text-right px-3">{cat.margin != null ? `${cat.margin.toFixed(1)}%` : "—"}</td>
+                              <td className="text-right px-3">
+                                {cat.margin != null
+                                  ? <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${tc}`}>{cat.margin >= 70 ? "Very high" : cat.margin >= 50 ? "Good" : cat.margin >= 30 ? "Healthy" : "Low"}</span>
+                                  : <span className="text-[10px] text-amber-500 font-medium">no CP</span>}
+                              </td>
+                              <td className="text-right px-3 text-foreground">{cat.orderCount}</td>
+                              <td className="pl-1 text-muted-foreground text-sm">›</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           </motion.div>
         )}

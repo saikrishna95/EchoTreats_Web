@@ -15,6 +15,7 @@ export interface Product {
   image: string;
   tags?: string[];
   mediaUrls?: { type: "image" | "video" | "gif"; url: string }[];
+  isAvailable?: boolean;
 }
 
 interface ProductCardProps {
@@ -188,6 +189,15 @@ const ProductCard = ({ product, index, onClick }: ProductCardProps) => {
                   }`}
                 />
               ))}
+            </div>
+          )}
+
+          {/* Out of Stock overlay */}
+          {product.isAvailable === false && (
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-20 pointer-events-none">
+              <span className="px-3 py-1.5 bg-red-600 text-white text-xs font-body font-semibold rounded-full tracking-wide">
+                Out of Stock
+              </span>
             </div>
           )}
 
