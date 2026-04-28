@@ -48,7 +48,7 @@ const AnnouncementBar = ({ visible = true }: AnnouncementBarProps) => {
       }`}
       aria-hidden={!visible}
     >
-      <div className="animate-marquee flex whitespace-nowrap">
+      <div className="animate-marquee inline-flex whitespace-nowrap">
         {[...texts, ...texts].map((text, i) => (
           <span key={i} className="mx-8 text-xs font-body font-medium text-primary-foreground tracking-wide">
             {text}
