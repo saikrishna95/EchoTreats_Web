@@ -7,7 +7,7 @@ import {
   ArrowLeft, Package, ShoppingBag, Plus, Trash2, Edit2, Check, Pencil,
   MessageSquare, Star, Bell, X, Upload, Download, Users,
   BarChart2, Tag, TrendingUp, ChevronDown, Search, RefreshCw,
-  ToggleLeft, ToggleRight, Megaphone, Instagram, Link,
+  ToggleLeft, ToggleRight, Megaphone, Instagram, Link, KeyRound,
 } from "lucide-react";
 import type { Database } from "@/integrations/supabase/types";
 import { toast } from "sonner";
@@ -95,6 +95,10 @@ const Admin = () => {
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUserForm, setNewUserForm] = useState({ name: "", email: "", phone: "", password: "" });
   const [addingUser, setAddingUser] = useState(false);
+  const [userAuthInfo, setUserAuthInfo] = useState<Record<string, { hasPassword: boolean; providers: string[] }>>({});
+  const [changePwdUserId, setChangePwdUserId] = useState<string | null>(null);
+  const [changePwdInput, setChangePwdInput] = useState("");
+  const [changingPwd, setChangingPwd] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
 
   const [paymentOrderId, setPaymentOrderId] = useState<string | null>(null);
@@ -212,6 +216,18 @@ const Admin = () => {
         });
         setInstaPosts(filled);
       }
+
+      // Load user auth info (providers / password existence) in background
+      supabase.functions.invoke("get-users-auth").then(({ data: authData }) => {
+        if (authData?.users) {
+          const info: Record<string, { hasPassword: boolean; providers: string[] }> = {};
+          (authData.users as any[]).forEach((u: any) => {
+            const providers = (u.identities || []).map((i: any) => i.provider as string);
+            info[u.id] = { hasPassword: providers.includes("email"), providers };
+          });
+          setUserAuthInfo(info);
+        }
+      }).catch(() => {});
 
       // Load featured home slots in background (table may not exist yet)
       (supabase.from("category_home_slots" as any) as any).select("*").order("slot_position").then((slotsRes: any) => {
@@ -753,6 +769,35 @@ const Admin = () => {
     }
     toast.success("User deleted");
     await fetchAll();
+  };
+
+  const handleChangePassword = async (userId: string) => {
+    if (!changePwdInput || changePwdInput.length < 6) {
+      toast.error("Password must be at least 6 characters"); return;
+    }
+    setChangingPwd(true);
+    const { data, error } = await supabase.functions.invoke("change-user-password", {
+      body: { user_id: userId, new_password: changePwdInput },
+    });
+    if (error || (data as any)?.error) {
+      toast.error((data as any)?.error || error?.message || "Failed to change password");
+    } else {
+      toast.success("Password changed successfully");
+      setChangePwdUserId(null);
+      setChangePwdInput("");
+      // Refresh auth info to reflect password now exists
+      supabase.functions.invoke("get-users-auth").then(({ data: authData }) => {
+        if (authData?.users) {
+          const info: Record<string, { hasPassword: boolean; providers: string[] }> = {};
+          (authData.users as any[]).forEach((u: any) => {
+            const providers = (u.identities || []).map((i: any) => i.provider as string);
+            info[u.id] = { hasPassword: providers.includes("email"), providers };
+          });
+          setUserAuthInfo(info);
+        }
+      }).catch(() => {});
+    }
+    setChangingPwd(false);
   };
 
   // ── Analytics ─────────────────────────────────────────────────
@@ -2880,58 +2925,101 @@ const Admin = () => {
                   const isAdmin = !!userRoles.find(r => r.user_id === p.user_id && r.role === "admin");
                   const isBlocked = !!userRoles.find(r => r.user_id === p.user_id && r.role === "user");
                   const orderCount = orders.filter(o => o.user_id === p.user_id).length;
+                  const authInfo = userAuthInfo[p.user_id];
+                  const isPwdOpen = changePwdUserId === p.user_id;
                   return (
-                    <div key={p.id} className={`flex items-center gap-4 p-4 rounded-xl border ${isBlocked ? "bg-red-50 border-red-100" : "bg-card border-border/50"}`}>
-                      {/* Avatar */}
-                      <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-body text-sm font-bold ${isAdmin ? "bg-purple-100 text-purple-700" : isBlocked ? "bg-red-100 text-red-600" : "bg-primary/10 text-primary"}`}>
-                        {(p.full_name || "?")[0].toUpperCase()}
-                      </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-body text-sm font-semibold text-foreground">{p.full_name || "—"}</p>
-                          {isAdmin && <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-body font-medium">Admin</span>}
-                          {isBlocked && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-body font-medium">Blocked</span>}
+                    <div key={p.id} className={`p-4 rounded-xl border ${isBlocked ? "bg-red-50 border-red-100" : "bg-card border-border/50"}`}>
+                      <div className="flex items-center gap-4">
+                        {/* Avatar */}
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-body text-sm font-bold ${isAdmin ? "bg-purple-100 text-purple-700" : isBlocked ? "bg-red-100 text-red-600" : "bg-primary/10 text-primary"}`}>
+                          {(p.full_name || "?")[0].toUpperCase()}
                         </div>
-                        <p className="font-body text-xs text-muted-foreground">
-                          {p.email || "—"}
-                        </p>
-                        <p className="font-body text-xs text-muted-foreground">
-                          {p.phone || "No phone"} • Joined {new Date(p.created_at).toLocaleDateString()} • {orderCount} order{orderCount !== 1 ? "s" : ""}
-                        </p>
+
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-body text-sm font-semibold text-foreground">{p.full_name || "—"}</p>
+                            {isAdmin && <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 font-body font-medium">Admin</span>}
+                            {isBlocked && <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-body font-medium">Blocked</span>}
+                            {authInfo?.hasPassword && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 font-body font-medium flex items-center gap-1">
+                                <KeyRound className="w-2.5 h-2.5" /> Password
+                              </span>
+                            )}
+                            {authInfo && !authInfo.hasPassword && authInfo.providers.length > 0 && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-orange-50 text-orange-600 font-body font-medium">
+                                {authInfo.providers.filter(p => p !== "email").join(", ") || "OAuth"}
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-body text-xs text-muted-foreground">
+                            {p.email || "—"}
+                          </p>
+                          <p className="font-body text-xs text-muted-foreground">
+                            {p.phone || "No phone"} • Joined {new Date(p.created_at).toLocaleDateString()} • {orderCount} order{orderCount !== 1 ? "s" : ""}
+                          </p>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                          {!isBlocked && !isAdmin && (
+                            <button type="button" onClick={() => setAdminRole(p.user_id)}
+                              className="px-2.5 py-1.5 bg-purple-100 text-purple-700 rounded-lg font-body text-xs hover:bg-purple-200 transition-colors">
+                              Make Admin
+                            </button>
+                          )}
+                          {isAdmin && (
+                            <button type="button" onClick={() => removeAdminRole(p.user_id)}
+                              className="px-2.5 py-1.5 bg-secondary text-foreground rounded-lg font-body text-xs hover:bg-secondary/80 transition-colors">
+                              Remove Admin
+                            </button>
+                          )}
+                          {!isBlocked ? (
+                            <button type="button" onClick={() => blockUser(p.user_id)}
+                              className="px-2.5 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg font-body text-xs hover:bg-red-100 transition-colors">
+                              Block
+                            </button>
+                          ) : (
+                            <button type="button" onClick={() => unblockUser(p.user_id)}
+                              className="px-2.5 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-lg font-body text-xs hover:bg-green-100 transition-colors">
+                              Unblock
+                            </button>
+                          )}
+                          <button type="button"
+                            onClick={() => { setChangePwdUserId(isPwdOpen ? null : p.user_id); setChangePwdInput(""); }}
+                            className={`p-1.5 rounded-lg transition-colors ${isPwdOpen ? "bg-blue-100 text-blue-700" : "hover:bg-blue-50 text-blue-500"}`}
+                            title="Change password">
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+                          <button type="button" onClick={() => deleteUser(p.user_id, p.full_name || p.user_id)}
+                            className="p-1.5 hover:bg-destructive/10 rounded-lg text-destructive transition-colors" title="Delete user permanently">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Actions */}
-                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
-                        {!isBlocked && !isAdmin && (
-                          <button type="button" onClick={() => setAdminRole(p.user_id)}
-                            className="px-2.5 py-1.5 bg-purple-100 text-purple-700 rounded-lg font-body text-xs hover:bg-purple-200 transition-colors">
-                            Make Admin
+                      {/* Inline change-password form */}
+                      {isPwdOpen && (
+                        <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-2 flex-wrap">
+                          <p className="font-body text-xs text-muted-foreground shrink-0">New password:</p>
+                          <input
+                            type="password"
+                            placeholder="Min 6 characters"
+                            value={changePwdInput}
+                            onChange={e => setChangePwdInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === "Enter") handleChangePassword(p.user_id); }}
+                            className="flex-1 min-w-40 px-3 py-1.5 bg-secondary/50 border border-border rounded-lg font-body text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/30"
+                          />
+                          <button type="button" onClick={() => handleChangePassword(p.user_id)} disabled={changingPwd}
+                            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg font-body text-xs hover:bg-blue-700 disabled:opacity-60 transition-colors">
+                            {changingPwd ? "Saving…" : "Save"}
                           </button>
-                        )}
-                        {isAdmin && (
-                          <button type="button" onClick={() => removeAdminRole(p.user_id)}
-                            className="px-2.5 py-1.5 bg-secondary text-foreground rounded-lg font-body text-xs hover:bg-secondary/80 transition-colors">
-                            Remove Admin
+                          <button type="button" onClick={() => { setChangePwdUserId(null); setChangePwdInput(""); }}
+                            className="px-3 py-1.5 bg-secondary rounded-lg font-body text-xs hover:bg-secondary/80 transition-colors">
+                            Cancel
                           </button>
-                        )}
-                        {!isBlocked ? (
-                          <button type="button" onClick={() => blockUser(p.user_id)}
-                            className="px-2.5 py-1.5 bg-red-50 text-red-600 border border-red-200 rounded-lg font-body text-xs hover:bg-red-100 transition-colors">
-                            Block
-                          </button>
-                        ) : (
-                          <button type="button" onClick={() => unblockUser(p.user_id)}
-                            className="px-2.5 py-1.5 bg-green-50 text-green-700 border border-green-200 rounded-lg font-body text-xs hover:bg-green-100 transition-colors">
-                            Unblock
-                          </button>
-                        )}
-                        <button type="button" onClick={() => deleteUser(p.user_id, p.full_name || p.user_id)}
-                          className="p-1.5 hover:bg-destructive/10 rounded-lg text-destructive transition-colors" title="Delete user permanently">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

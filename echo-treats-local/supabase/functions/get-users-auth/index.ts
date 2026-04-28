@@ -19,12 +19,6 @@ serve(async (req) => {
   }
 
   try {
-    const { user_id } = await req.json();
-
-    if (!user_id) {
-      return json({ error: "user_id is required" });
-    }
-
     // @ts-ignore Deno global
     const supabaseAdmin = createClient(
       // @ts-ignore Deno global
@@ -33,19 +27,20 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(user_id);
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
 
     if (error) {
       return json({ error: error.message });
     }
 
-    await supabaseAdmin.from("profiles").delete().eq("user_id", user_id);
-    await supabaseAdmin.from("user_roles").delete().eq("user_id", user_id);
+    const users = data.users.map((u: any) => ({
+      id: u.id,
+      identities: (u.identities || []).map((i: any) => ({ provider: i.provider })),
+    }));
 
-    return json({ success: true });
+    return json({ users });
 
   } catch (err) {
     return json({ error: String(err) });
   }
 });
-

@@ -19,10 +19,14 @@ serve(async (req) => {
   }
 
   try {
-    const { user_id } = await req.json();
+    const { user_id, new_password } = await req.json();
 
-    if (!user_id) {
-      return json({ error: "user_id is required" });
+    if (!user_id || !new_password) {
+      return json({ error: "user_id and new_password are required" });
+    }
+
+    if (new_password.length < 6) {
+      return json({ error: "Password must be at least 6 characters" });
     }
 
     // @ts-ignore Deno global
@@ -33,14 +37,13 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { error } = await supabaseAdmin.auth.admin.deleteUser(user_id);
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(user_id, {
+      password: new_password,
+    });
 
     if (error) {
       return json({ error: error.message });
     }
-
-    await supabaseAdmin.from("profiles").delete().eq("user_id", user_id);
-    await supabaseAdmin.from("user_roles").delete().eq("user_id", user_id);
 
     return json({ success: true });
 
@@ -48,4 +51,3 @@ serve(async (req) => {
     return json({ error: String(err) });
   }
 });
-

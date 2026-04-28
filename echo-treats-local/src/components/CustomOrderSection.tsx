@@ -4,7 +4,7 @@ import { Upload, Mail, MessageCircle, Phone, X, ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import customImg from "@/assets/product-custom-1.jpg";
+import customImg from "@/assets/engage-custom-cake.jpeg";
 
 const WHATSAPP_NUMBER = import.meta.env.VITE_WHATSAPP_NUMBER || "919000000000";
 const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE || "+919000000000";
